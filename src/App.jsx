@@ -10,7 +10,7 @@ import {
 // CONEXÃO DIRETA COM O SUPABASE
 // =========================================================================
 const SUPABASE_URL = 'https://rihcrmjdryujyuqxdapk.supabase.co';
-const SUPABASE_ANON_KEY = 'COLE_AQUI_SUA_CHAVE_ANON_QUE_COMECA_COM_eyJ';
+const SUPABASE_ANON_KEY = 'EyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpaGNybWpkcnlxanl1cXhkYXBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3NDQ2NTksImV4cCI6MjExMTMyMDY1OX0.Y2b5fwt36jveb95FaoVvXxwHtFYd07RlKfLcfRjX20g';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
