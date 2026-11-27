@@ -354,8 +354,15 @@ export default function App() {
   });
   const [pendingCheckins, setPendingCheckins] = useState([]);
 
-  const [role, setRole] = useState(null);
-  const [loggedStudentId, setLoggedStudentId] = useState(null);
+  // SESSÃO PERSISTENTE (NÃO DESLOGA AO ATUALIZAR A PÁGINA)
+  const [role, setRole] = useState(() => {
+    const saved = localStorage.getItem('krya_role_v1');
+    return saved && saved !== 'complete_prereg' ? saved : null;
+  });
+  const [loggedStudentId, setLoggedStudentId] = useState(() => {
+    return localStorage.getItem('krya_student_id_v1') || null;
+  });
+
   const [loginInput, setLoginInput] = useState('');
   const [passInput, setPassInput] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -403,6 +410,30 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('krya_config_v1', JSON.stringify(config));
   }, [config]);
+
+  useEffect(() => {
+    if (role && role !== 'complete_prereg') {
+      localStorage.setItem('krya_role_v1', role);
+    } else if (!role) {
+      localStorage.removeItem('krya_role_v1');
+    }
+  }, [role]);
+
+  useEffect(() => {
+    if (loggedStudentId) {
+      localStorage.setItem('krya_student_id_v1', loggedStudentId);
+    } else {
+      localStorage.removeItem('krya_student_id_v1');
+    }
+  }, [loggedStudentId]);
+
+  const handleLogout = () => {
+    setRole(null);
+    setLoggedStudentId(null);
+    setSelectedFolder(null);
+    localStorage.removeItem('krya_role_v1');
+    localStorage.removeItem('krya_student_id_v1');
+  };
 
   // =========================================================================
   // SINCRONIZAÇÃO EM TEMPO REAL COM SUPABASE
@@ -682,7 +713,7 @@ export default function App() {
               <span className="font-bold tracking-wide text-lg">KRYA BJJ — Matrícula</span>
             </div>
             <button
-              onClick={() => { setRole(null); setCompletedCredentials(null); }}
+              onClick={() => { setCompletedCredentials(null); handleLogout(); }}
               className="text-xs text-slate-400 hover:text-white"
             >
               Voltar ao Login
@@ -943,7 +974,7 @@ export default function App() {
               <KeyRound className="w-3.5 h-3.5 text-amber-400" /> Senha
             </button>
             <button
-              onClick={() => setRole(null)}
+              onClick={handleLogout}
               className="flex items-center gap-1 text-xs bg-slate-800 hover:bg-red-950 text-slate-300 px-2.5 py-1.5 rounded-lg"
             >
               <LogOut className="w-3.5 h-3.5" /> Sair
@@ -1170,7 +1201,7 @@ export default function App() {
             <span className="font-bold text-sm">Tatame • Professor</span>
           </div>
           <button
-            onClick={() => setRole(null)}
+            onClick={handleLogout}
             className="flex items-center gap-1 text-xs bg-slate-800 px-2.5 py-1.5 rounded-lg"
           >
             <LogOut className="w-3.5 h-3.5" /> Sair
@@ -1363,7 +1394,7 @@ export default function App() {
             <UserPlus className="w-4 h-4" /> Pré-Cadastro
           </button>
           <button
-            onClick={() => { setRole(null); setSelectedFolder(null); }}
+            onClick={handleLogout}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
             <LogOut className="w-4 h-4" />
@@ -1638,7 +1669,7 @@ export default function App() {
                     <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
                       pr.used ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
                     }`}>
-                      {pr.used ? `Ativo (${pr.generatedCode})` : 'Aguardando Aluno'}
+                      {pr.used ? `Ativo (${pr.generatedCode || 'Concluído'})` : 'Aguardando Aluno'}
                     </span>
                   </div>
                   {!pr.used && (
