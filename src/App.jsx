@@ -10,7 +10,7 @@ import {
 // CONEXÃO DIRETA COM O SUPABASE
 // =========================================================================
 const SUPABASE_URL = 'https://rihcrmjdryujyuqxdapk.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
+const SUPABASE_ANON_KEY = 'COLE_AQUI_SUA_CHAVE_ANON_QUE_COMECA_COM_eyJ';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -513,7 +513,6 @@ export default function App() {
     if (supabase) {
       const { error } = await supabase.from('krya_students').upsert({ id: st.id, data: st });
       if (error) {
-        // Fallback caso a tabela use colunas diretas em vez da coluna JSONB `data`
         await supabase.from('krya_students').upsert(st);
       }
     }
@@ -538,12 +537,17 @@ export default function App() {
       return exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
     });
     if (supabase) {
-      const { error } = await supabase.from('krya_preregs').upsert({ token: pr.token, data: pr });
+      const { error } = await supabase.from('krya_preregs').upsert({
+        token: pr.token,
+        name: pr.name,
+        phone: pr.phone,
+        email: pr.email,
+        used: pr.used
+      });
       if (error) {
-        // Fallback caso a tabela `krya_preregs` tenha colunas planas (token, name, phone, email, used)
-        const { error: flatError } = await supabase.from('krya_preregs').upsert(pr);
-        if (flatError) {
-          alert('Erro ao salvar pré-cadastro na nuvem: ' + flatError.message);
+        const { error: jsonError } = await supabase.from('krya_preregs').upsert({ token: pr.token, data: pr });
+        if (jsonError) {
+          alert('Erro ao salvar pré-cadastro na nuvem: ' + jsonError.message);
         }
       }
     }
