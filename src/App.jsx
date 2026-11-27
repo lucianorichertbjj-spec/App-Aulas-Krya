@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-  Shield, Users, Award, DollarSign, CheckCircle2, Clock, Search,
+  Shield, Users, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
   QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X, Mail
 } from 'lucide-react';
@@ -13,6 +13,61 @@ const SUPABASE_URL = 'https://rihcrmjdryqjyuqxdapk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// =========================================================================
+// GERADOR OFICIAL DE PIX COPIA E COLA (PADRÃO EMV / BANCO CENTRAL + CRC16)
+// =========================================================================
+function crc16CCITT(str) {
+  let crc = 0xFFFF;
+  for (let i = 0; i < str.length; i++) {
+    crc ^= str.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+      } else {
+        crc = (crc << 1) & 0xFFFF;
+      }
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
+function formatEMV(id, value) {
+  const len = String(value.length).padStart(2, '0');
+  return `${id}${len}${value}`;
+}
+
+function generatePixPayload({ key, name, city, amount, txid = '***' }) {
+  const cleanName = (name || 'CRISTIANE M G NASCIMENT')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .toUpperCase()
+    .slice(0, 25);
+
+  const cleanCity = (city || 'PORTO ALEGRE')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .toUpperCase()
+    .slice(0, 15);
+
+  const cleanTxid = (txid || '***').replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || '***';
+  const merchantAccount = formatEMV('00', 'br.gov.bcb.pix') + formatEMV('01', key.trim());
+  const additionalData = formatEMV('05', cleanTxid);
+
+  const payload =
+    formatEMV('00', '01') +
+    formatEMV('26', merchantAccount) +
+    formatEMV('52', '0000') +
+    formatEMV('53', '986') +
+    (amount ? formatEMV('54', Number(amount).toFixed(2)) : '') +
+    formatEMV('58', 'BR') +
+    formatEMV('59', cleanName) +
+    formatEMV('60', cleanCity) +
+    formatEMV('62', additionalData) +
+    '6304';
+
+  return payload + crc16CCITT(payload);
+}
 
 // =========================================================================
 // MATRIZ OFICIAL DE GRADUAÇÃO KRYA BJJ (CORES SÓLIDAS + CLASSES TAILWIND)
@@ -106,6 +161,12 @@ function buildCredentialsWhatsAppLink(phone, name, code, password) {
   const digits = (phone || '').replace(/\D/g, '');
   const prefix = digits ? `https://wa.me/55${digits}?text=` : 'https://wa.me/?text=';
   return `${prefix}${encodeURIComponent(msg)}`;
+}
+
+function buildReceiptWhatsAppLink(academyPhone, student) {
+  const digits = (academyPhone || '51995667443').replace(/\D/g, '');
+  const msg = `Olá Krya BJJ! Segue o comprovante do pagamento Pix da mensalidade:\n\nAluno: ${student.name}\nCódigo: ${student.code}\nValor: R$ ${student.fee},00`;
+  return `https://wa.me/55${digits}?text=${encodeURIComponent(msg)}`;
 }
 
 function buildRecoveryMailtoLink(email, name, code, password) {
@@ -336,8 +397,11 @@ const INITIAL_CONFIG = {
   profPass: 'prof',
   kidsFee: 185,
   adultFee: 200,
-  pixKey: 'CNPJ 00.000.000/0001-00 (Krya BJJ)',
-  pixBeneficiary: 'KRYA BJJ ACADEMIA LTDA'
+  pixKey: '5a8175ab-ae1e-4866-918e-6842e331bbc0',
+  pixBeneficiary: 'CRISTIANE M G NASCIMENT',
+  pixFullName: 'Cristiane Maizonetti Guimarães Nascimento',
+  pixCity: 'PORTO ALEGRE',
+  whatsappNumber: '51995667443'
 };
 
 function extractRecord(row) {
@@ -364,7 +428,22 @@ export default function App() {
   });
   const [config, setConfig] = useState(() => {
     const saved = localStorage.getItem('krya_config_v1');
-    return saved ? JSON.parse(saved) : INITIAL_CONFIG;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (!parsed.pixKey || parsed.pixKey.includes('00.000.000')) {
+        return {
+          ...INITIAL_CONFIG,
+          ...parsed,
+          pixKey: INITIAL_CONFIG.pixKey,
+          pixBeneficiary: INITIAL_CONFIG.pixBeneficiary,
+          pixFullName: INITIAL_CONFIG.pixFullName,
+          pixCity: INITIAL_CONFIG.pixCity,
+          whatsappNumber: INITIAL_CONFIG.whatsappNumber
+        };
+      }
+      return { ...INITIAL_CONFIG, ...parsed };
+    }
+    return INITIAL_CONFIG;
   });
   const [pendingCheckins, setPendingCheckins] = useState([]);
 
@@ -1185,7 +1264,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // TELA INICIAL DE LOGIN (COM "ESQUECI MINHA SENHA")
+  // TELA INICIAL DE LOGIN
   // =========================================================================
   if (!role) {
     return (
@@ -1248,7 +1327,7 @@ export default function App() {
           </form>
         </div>
 
-        {/* MODAL DE RECUPERAÇÃO DE SENHA POR E-MAIL */}
+        {/* MODAL DE RECUPERAÇÃO DE SENHA */}
         {showForgotModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-4">
@@ -1374,7 +1453,15 @@ export default function App() {
       : (KIDS_BELTS.find(b => b.id === st.beltId)?.name || 'Branca');
     const alreadyCheckedIn = pendingCheckins.includes(st.id);
 
-    const pixPayload = `00020126580014BR.GOV.BCB.PIX0136${config.pixKey}5204000053039865406${st.fee.toFixed(2)}5802BR5915KRYA BJJ PORTO6012PORTO ALEGRE62120508${st.code}6304ABCD`;
+    const pixPayload = generatePixPayload({
+      key: config.pixKey,
+      name: config.pixBeneficiary,
+      city: config.pixCity || 'PORTO ALEGRE',
+      amount: st.fee,
+      txid: st.code
+    });
+
+    const isAwaitingApproval = st.paymentStatus === 'Aguardando aprovação';
 
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
@@ -1484,27 +1571,55 @@ export default function App() {
             {alreadyCheckedIn ? 'Presença Enviada (Aguardando Professor)' : 'Registrar Presença no Treino de Hoje'}
           </button>
 
+          {/* CARD DE MENSALIDADE E PAGAMENTO PIX */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-xs text-slate-400">Mensalidade • Vencimento Dia {st.dueDay}</div>
                 <div className="text-lg font-black text-white">R$ {st.fee},00</div>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+              <span className={`px-3 py-1 rounded-full text-xs font-bold text-center ${
                 st.paymentStatus === 'Em dia'
                   ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : isAwaitingApproval
+                  ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
                   : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
               }`}>
-                {st.paymentStatus}
+                {isAwaitingApproval ? 'Aguardando aprovação da Krya BJJ' : st.paymentStatus}
               </span>
             </div>
 
-            {st.paymentStatus !== 'Em dia' && (
+            {isAwaitingApproval && (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-3 space-y-2.5">
+                <p className="text-xs text-blue-200 leading-relaxed">
+                  Seu pagamento está <strong>aguardando aprovação do administrador da Krya BJJ</strong>. Envie o comprovante no WhatsApp para agilizar a liberação:
+                </p>
+                <a
+                  href={buildReceiptWhatsAppLink(config.whatsappNumber, st)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition"
+                >
+                  Enviar Comprovante no WhatsApp da Krya BJJ
+                </a>
+                <button
+                  onClick={() => setShowPixModal(true)}
+                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                >
+                  Ver Código Pix Novamente
+                </button>
+              </div>
+            )}
+
+            {st.paymentStatus === 'Pendente' && (
               <button
-                onClick={() => setShowPixModal(true)}
-                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2"
+                onClick={() => {
+                  setCopiedPix(false);
+                  setShowPixModal(true);
+                }}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition shadow-lg"
               >
-                <QrCode className="w-4 h-4" /> Pagar Mensalidade via Pix
+                <QrCode className="w-4 h-4" /> Aperte aqui para fazer o pagamento
               </button>
             )}
           </div>
@@ -1537,11 +1652,29 @@ export default function App() {
           </div>
         </div>
 
+        {/* MODAL DE PAGAMENTO PIX */}
         {showPixModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-4 text-center">
-              <h3 className="font-bold text-lg text-white">Pix Mensalidade Krya BJJ</h3>
-              <p className="text-xs text-slate-400">Valor: <strong className="text-emerald-400">R$ {st.fee},00</strong> • Beneficiário: {config.pixBeneficiary}</p>
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-base text-white">Pagamento Pix • Krya BJJ</h3>
+                <button
+                  onClick={() => setShowPixModal(false)}
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs space-y-1">
+                <div className="text-slate-400">
+                  Valor: <strong className="text-emerald-400 text-sm">R$ {st.fee},00</strong>
+                </div>
+                <div className="text-slate-400">
+                  Favorecido: <strong className="text-slate-200">{config.pixFullName || config.pixBeneficiary}</strong>
+                </div>
+              </div>
+
               <div className="bg-white p-3 rounded-2xl w-44 h-44 mx-auto flex items-center justify-center">
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(pixPayload)}`}
@@ -1549,23 +1682,39 @@ export default function App() {
                   className="w-full h-full"
                 />
               </div>
+
               <button
                 onClick={() => {
                   navigator.clipboard?.writeText(pixPayload);
                   setCopiedPix(true);
-                  setTimeout(() => setCopiedPix(false), 2500);
+                  if (st.paymentStatus !== 'Em dia') {
+                    saveStudent({ ...st, paymentStatus: 'Aguardando aprovação' });
+                  }
                 }}
-                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center justify-center gap-2 transition"
               >
-                {copiedPix ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
-                {copiedPix ? 'Código Pix Copiado!' : 'Copiar Pix Copia e Cola'}
+                {copiedPix ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copiedPix ? 'Código Pix Copiado! Pague no seu banco' : 'Copiar Pix Copia e Cola'}
               </button>
-              <button
-                onClick={() => setShowPixModal(false)}
-                className="w-full py-2 text-xs text-slate-400 hover:text-white"
+
+              <a
+                href={buildReceiptWhatsAppLink(config.whatsappNumber, st)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => {
+                  if (st.paymentStatus !== 'Em dia') {
+                    saveStudent({ ...st, paymentStatus: 'Aguardando aprovação' });
+                  }
+                  setShowPixModal(false);
+                }}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center justify-center gap-2 transition"
               >
-                Fechar
-              </button>
+                Enviar Comprovante no WhatsApp da Krya BJJ
+              </a>
+
+              <p className="text-[11px] text-slate-400">
+                Após pagar no seu banco, envie o comprovante no WhatsApp para o administrador aprovar seu pagamento.
+              </p>
             </div>
           </div>
         )}
@@ -1750,6 +1899,12 @@ export default function App() {
   const isMaster = role === 'master';
   const totalRevenue = students.filter(s => s.paymentStatus === 'Em dia').reduce((acc, s) => acc + s.fee, 0);
   const pendingRevenue = students.filter(s => s.paymentStatus !== 'Em dia').reduce((acc, s) => acc + s.fee, 0);
+  const awaitingApprovalCount = students.filter(s => s.paymentStatus === 'Aguardando aprovação').length;
+
+  const sortedFinancialStudents = [...students].sort((a, b) => {
+    const order = { 'Aguardando aprovação': 0, 'Pendente': 1, 'Em dia': 2 };
+    return (order[a.paymentStatus] ?? 1) - (order[b.paymentStatus] ?? 1);
+  });
 
   const adultStudents = students.filter(s => s.category === 'Adultos (16+)');
   const kidsStudents = students.filter(s => s.category === 'Kids / Juvenil (7-16)');
@@ -1825,7 +1980,11 @@ export default function App() {
           {[
             { id: 'alunos', label: `Turmas & Equipe (${students.length + professors.length})`, icon: Users },
             { id: 'precadastro', label: `Pré-Cadastros (${preRegs.filter(p => !p.used).length})`, icon: LinkIconFallback },
-            { id: 'financeiro', label: 'Financeiro & Baixas', icon: DollarSign },
+            {
+              id: 'financeiro',
+              label: awaitingApprovalCount > 0 ? `Financeiro (${awaitingApprovalCount} p/ aprovar)` : 'Financeiro & Baixas',
+              icon: DollarSign
+            },
             ...(isMaster ? [
               { id: 'config', label: 'Configurações & Senhas', icon: KeyRound }
             ] : [])
@@ -2276,44 +2435,68 @@ export default function App() {
                 <div className="text-xl font-black text-emerald-400 mt-1">R$ {totalRevenue},00</div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400">A Receber (Pendente)</div>
+                <div className="text-xs text-slate-400">A Receber / Em Análise</div>
                 <div className="text-xl font-black text-amber-400 mt-1">R$ {pendingRevenue},00</div>
               </div>
             </div>
 
             <div className="space-y-2.5">
-              {students.map(st => (
-                <div key={st.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between gap-2">
-                  <div>
-                    <div className="font-bold text-sm text-white">{st.name}</div>
-                    <div className="text-xs text-slate-400">
-                      R$ {st.fee},00 • Venc. dia {st.dueDay} {st.lastPaymentMethod ? `• Pago via ${st.lastPaymentMethod}` : ''}
+              {sortedFinancialStudents.map(st => {
+                const isWaiting = st.paymentStatus === 'Aguardando aprovação';
+                return (
+                  <div
+                    key={st.id}
+                    className={`rounded-2xl p-3.5 flex items-center justify-between gap-2 border ${
+                      isWaiting
+                        ? 'bg-blue-950/30 border-blue-500/40'
+                        : 'bg-slate-900 border-slate-800'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-sm text-white flex items-center gap-2 flex-wrap">
+                        {st.name}
+                        {isWaiting && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold">
+                            Aguardando aprovação
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        R$ {st.fee},00 • Venc. dia {st.dueDay} {st.lastPaymentMethod ? `• Pago via ${st.lastPaymentMethod}` : ''}
+                      </div>
                     </div>
+                    {st.paymentStatus === 'Em dia' ? (
+                      <button
+                        onClick={() => saveStudent({ ...st, paymentStatus: 'Pendente', lastPaymentMethod: '' })}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold shrink-0"
+                      >
+                        Em dia ✓
+                      </button>
+                    ) : isWaiting ? (
+                      <button
+                        onClick={() => saveStudent({ ...st, paymentStatus: 'Em dia', lastPaymentMethod: 'Pix' })}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shrink-0"
+                      >
+                        Aprovar Pagamento
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setManualPayStudent(st)}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shrink-0"
+                      >
+                        Dar Baixa Manual
+                      </button>
+                    )}
                   </div>
-                  {st.paymentStatus === 'Em dia' ? (
-                    <button
-                      onClick={() => saveStudent({ ...st, paymentStatus: 'Pendente', lastPaymentMethod: '' })}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold"
-                    >
-                      Em dia ✓
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setManualPayStudent(st)}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold"
-                    >
-                      Dar Baixa Manual
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
         {activeTab === 'config' && isMaster && (
           <div className="mt-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h3 className="font-bold text-sm text-amber-400">Senhas de Acesso & Mensalidades</h3>
+            <h3 className="font-bold text-sm text-amber-400">Senhas de Acesso, Pix & WhatsApp</h3>
             <div className="grid sm:grid-cols-3 gap-3 text-xs">
               <div>
                 <label className="text-slate-400 block mb-1">Senha Master (Dono)</label>
@@ -2343,14 +2526,14 @@ export default function App() {
                 />
               </div>
             </div>
-            <div className="grid sm:grid-cols-2 gap-3 text-xs pt-2">
+            <div className="grid sm:grid-cols-3 gap-3 text-xs pt-2">
               <div>
                 <label className="text-slate-400 block mb-1">Chave Pix da Academia</label>
                 <input
                   type="text"
                   value={config.pixKey}
                   onChange={(e) => setConfig({ ...config, pixKey: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
                 />
               </div>
               <div>
@@ -2360,6 +2543,15 @@ export default function App() {
                   value={config.pixBeneficiary}
                   onChange={(e) => setConfig({ ...config, pixBeneficiary: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">WhatsApp da Krya BJJ</label>
+                <input
+                  type="text"
+                  value={config.whatsappNumber || ''}
+                  onChange={(e) => setConfig({ ...config, whatsappNumber: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
                 />
               </div>
             </div>
@@ -2680,6 +2872,7 @@ export default function App() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm"
                   >
                     <option value="Em dia">Em dia</option>
+                    <option value="Aguardando aprovação">Aguardando aprovação</option>
                     <option value="Pendente">Pendente</option>
                   </select>
                 </div>
