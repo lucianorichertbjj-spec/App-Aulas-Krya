@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   Shield, Users, Award, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
-  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X
+  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X, Mail
 } from 'lucide-react';
 
 // =========================================================================
@@ -106,6 +106,13 @@ function buildCredentialsWhatsAppLink(phone, name, code, password) {
   const digits = (phone || '').replace(/\D/g, '');
   const prefix = digits ? `https://wa.me/55${digits}?text=` : 'https://wa.me/?text=';
   return `${prefix}${encodeURIComponent(msg)}`;
+}
+
+function buildRecoveryMailtoLink(email, name, code, password) {
+  const appUrl = window.location.origin;
+  const subject = 'Recuperação de Senha - Krya BJJ';
+  const body = `Olá ${name},\n\nAqui estão seus dados de acesso ao aplicativo Krya BJJ:\n\nLink: ${appUrl}\nLogin / Código: ${code}\nSenha: ${password}\n\nOss!`;
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 // =========================================================================
@@ -377,6 +384,13 @@ export default function App() {
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [search, setSearch] = useState('');
 
+  // ESTADOS DE RECUPERAÇÃO DE SENHA ("ESQUECI MINHA SENHA")
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [recoveredStudent, setRecoveredStudent] = useState(null);
+  const [searchingRecovery, setSearchingRecovery] = useState(false);
+
   const [activePreRegToken, setActivePreRegToken] = useState(null);
   const [showPreRegModal, setShowPreRegModal] = useState(false);
   const [newPreName, setNewPreName] = useState('');
@@ -386,7 +400,7 @@ export default function App() {
   const [copiedCreds, setCopiedCreds] = useState(false);
   const [submittingPreReg, setSubmittingPreReg] = useState(false);
 
-  // CAMPOS DA FICHA CADASTRAL DO ALUNO (PRÉ-PREENCHIDOS AO ABRIR O LINK)
+  // CAMPOS DA FICHA CADASTRAL DO ALUNO
   const [compName, setCompName] = useState('');
   const [compPhone, setCompPhone] = useState('');
   const [compEmail, setCompEmail] = useState('');
@@ -406,7 +420,7 @@ export default function App() {
 
   const [manualPayStudent, setManualPayStudent] = useState(null);
 
-  // ESTADOS DOS MODAIS DE EDIÇÃO E EXCLUSÃO (MASTER / PRÉ-CADASTROS)
+  // ESTADOS DOS MODAIS DE EDIÇÃO E EXCLUSÃO
   const [editingStudent, setEditingStudent] = useState(null);
   const [editingProf, setEditingProf] = useState(null);
   const [editingPreReg, setEditingPreReg] = useState(null);
@@ -475,6 +489,7 @@ export default function App() {
       setShowPreRegModal(false);
       setShowPassModal(false);
       setShowPixModal(false);
+      setShowForgotModal(false);
       setManualPayStudent(null);
       setEditingStudent(null);
       setEditingProf(null);
@@ -611,7 +626,7 @@ export default function App() {
   }, []);
 
   // =========================================================================
-  // LEITURA DIRETA DO TOKEN DA URL (ABRE A FICHA CADASTRAL NO CELULAR DO ALUNO)
+  // LEITURA DIRETA DO TOKEN DA URL
   // =========================================================================
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -776,6 +791,36 @@ export default function App() {
       return;
     }
     setLoginError('Login ou senha inválidos. Verifique seu código de aluno ou senha da equipe.');
+  };
+
+  const handleRecoverPassword = async (e) => {
+    e.preventDefault();
+    setForgotError('');
+    setRecoveredStudent(null);
+    const emailClean = forgotEmail.trim().toLowerCase();
+    if (!emailClean) return;
+
+    setSearchingRecovery(true);
+    try {
+      let found = students.find(s => s.email && s.email.trim().toLowerCase() === emailClean);
+
+      if (!found && supabase) {
+        const { data } = await supabase.from('krya_students').select('*');
+        if (data?.length) {
+          const allStudents = data.map(extractRecord).filter(Boolean);
+          setStudents(allStudents);
+          found = allStudents.find(s => s.email && s.email.trim().toLowerCase() === emailClean);
+        }
+      }
+
+      if (found) {
+        setRecoveredStudent(found);
+      } else {
+        setForgotError('Nenhuma conta encontrada com este e-mail. Confira o endereço ou fale com a recepção da Krya BJJ.');
+      }
+    } finally {
+      setSearchingRecovery(false);
+    }
   };
 
   const handleCreatePreReg = async (e) => {
@@ -1140,7 +1185,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // TELA INICIAL DE LOGIN
+  // TELA INICIAL DE LOGIN (COM "ESQUECI MINHA SENHA")
   // =========================================================================
   if (!role) {
     return (
@@ -1188,8 +1233,116 @@ export default function App() {
             >
               Entrar no Sistema
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setForgotEmail('');
+                setForgotError('');
+                setRecoveredStudent(null);
+                setShowForgotModal(true);
+              }}
+              className="w-full py-2 text-xs text-amber-400 hover:text-amber-300 font-semibold transition"
+            >
+              Esqueci minha senha
+            </button>
           </form>
         </div>
+
+        {/* MODAL DE RECUPERAÇÃO DE SENHA POR E-MAIL */}
+        {showForgotModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-base text-amber-400 flex items-center gap-2">
+                  <Mail className="w-4 h-4" /> Recuperar Senha
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {!recoveredStudent ? (
+                <form onSubmit={handleRecoverPassword} className="space-y-3">
+                  <p className="text-xs text-slate-400">
+                    Digite o e-mail cadastrado na sua ficha de aluno para recuperar seu login e senha.
+                  </p>
+                  <input
+                    type="email"
+                    required
+                    placeholder="seuemail@exemplo.com"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:border-amber-500 outline-none"
+                  />
+                  {forgotError && <p className="text-xs text-red-400">{forgotError}</p>}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="flex-1 py-2.5 rounded-xl bg-slate-800 text-xs font-bold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={searchingRecovery}
+                      className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold"
+                    >
+                      {searchingRecovery ? 'Buscando...' : 'Recuperar Senha'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-3 text-center">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-7 h-7" />
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    Cadastro localizado para <strong>{recoveredStudent.name}</strong>:
+                  </p>
+                  <div className="bg-slate-950 border border-amber-500/40 rounded-xl p-3.5 space-y-1.5 text-left text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Login / Código:</span>
+                      <span className="font-mono font-bold text-amber-400 text-sm">{recoveredStudent.code}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Senha:</span>
+                      <span className="font-mono font-bold text-emerald-400 text-sm">{recoveredStudent.password}</span>
+                    </div>
+                  </div>
+
+                  <a
+                    href={buildRecoveryMailtoLink(
+                      recoveredStudent.email,
+                      recoveredStudent.name,
+                      recoveredStudent.code,
+                      recoveredStudent.password
+                    )}
+                    className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <Mail className="w-4 h-4" /> Enviar para meu E-mail
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginInput(recoveredStudent.code);
+                      setPassInput('');
+                      setShowForgotModal(false);
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
+                  >
+                    Preencher Login e Voltar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
