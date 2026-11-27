@@ -436,6 +436,54 @@ export default function App() {
     }
   }, [loggedStudentId]);
 
+  // =========================================================================
+  // CONTROLE DO BOTÃO VOLTAR DO CELULAR (EVITA FECHAR O APP AO SAIR DE PASTAS)
+  // =========================================================================
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const state = event.state;
+      if (state && typeof state === 'object') {
+        setSelectedFolder(state.kryaFolder || null);
+        if (state.kryaTab) setActiveTab(state.kryaTab);
+      } else {
+        setSelectedFolder(null);
+        setActiveTab('alunos');
+      }
+      setSearch('');
+      setShowPreRegModal(false);
+      setShowPassModal(false);
+      setShowPixModal(false);
+      setManualPayStudent(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleOpenFolder = (folderId) => {
+    window.history.pushState({ kryaTab: activeTab, kryaFolder: folderId }, '');
+    setSelectedFolder(folderId);
+    setSearch('');
+  };
+
+  const handleBackToFolders = () => {
+    if (window.history.state?.kryaFolder) {
+      window.history.back();
+    } else {
+      setSelectedFolder(null);
+      setSearch('');
+    }
+  };
+
+  const handleSelectTab = (tabId) => {
+    if (tabId !== activeTab || selectedFolder) {
+      window.history.pushState({ kryaTab: tabId, kryaFolder: null }, '');
+    }
+    setActiveTab(tabId);
+    setSelectedFolder(null);
+    setSearch('');
+  };
+
   const handleLogout = () => {
     setRole(null);
     setLoggedStudentId(null);
@@ -640,7 +688,7 @@ export default function App() {
     await savePreReg(pr);
     setNewPreName(''); setNewPrePhone(''); setNewPreEmail('');
     setShowPreRegModal(false);
-    setActiveTab('precadastro');
+    handleSelectTab('precadastro');
   };
 
   const handleCepLookup = async (cepVal) => {
@@ -1459,7 +1507,7 @@ export default function App() {
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setSelectedFolder(null); setSearch(''); }}
+              onClick={() => handleSelectTab(tab.id)}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${
                 activeTab === tab.id
                   ? 'bg-amber-500 text-slate-950'
@@ -1482,7 +1530,7 @@ export default function App() {
                   {folderDefinitions.map(folder => (
                     <button
                       key={folder.id}
-                      onClick={() => { setSelectedFolder(folder.id); setSearch(''); }}
+                      onClick={() => handleOpenFolder(folder.id)}
                       className="bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 flex items-center justify-between text-left transition group shadow-lg"
                     >
                       <div className="flex items-center gap-3.5">
@@ -1510,7 +1558,7 @@ export default function App() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
                   <button
-                    onClick={() => { setSelectedFolder(null); setSearch(''); }}
+                    onClick={handleBackToFolders}
                     className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300 px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800"
                   >
                     <ArrowLeft className="w-4 h-4" /> Voltar às Pastas
