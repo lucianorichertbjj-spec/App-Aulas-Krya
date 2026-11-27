@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import {
   Shield, Users, Award, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
   QrCode, ChevronRight, AlertCircle
 } from 'lucide-react';
-import { supabase } from './firebaseConfig';
+
+// =========================================================================
+// CONEXÃO DIRETA COM O SUPABASE (COLE SUA URL E SUA CHAVE ANON AQUI)
+// =========================================================================
+const SUPABASE_URL = 'https://rihcrmjdryujyuqxdapk.supabase.co';
+const SUPABASE_ANON_KEY = 'COLE_SUA_CHAVE_ANON_PUBLIC_AQUI';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================================
 // MATRIZ OFICIAL DE GRADUAÇÃO KRYA BJJ (CORES SÓLIDAS + CLASSES TAILWIND)
