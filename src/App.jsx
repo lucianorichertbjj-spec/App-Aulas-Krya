@@ -748,7 +748,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // TELA INICIAL DE LOGIN
+  // TELA INICIAL DE LOGIN (SEM ATALHOS RÁPIDOS)
   // =========================================================================
   if (!role) {
     return (
@@ -797,54 +797,6 @@ export default function App() {
               Entrar no Sistema
             </button>
           </form>
-
-          <div className="pt-3 border-t border-slate-800 space-y-2">
-            <p className="text-[11px] text-slate-400 text-center uppercase tracking-wider font-semibold">
-              Atalhos Rápidos de Acesso
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                onClick={() => { setRole('master'); setActiveTab('alunos'); }}
-                className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left"
-              >
-                <div className="font-bold text-amber-400">Dono Master</div>
-                <div className="text-[10px] text-slate-400">Senha: {config.masterPass}</div>
-              </button>
-              <button
-                onClick={() => { setRole('admin'); setActiveTab('alunos'); }}
-                className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left"
-              >
-                <div className="font-bold text-blue-400">Admin / Recepção</div>
-                <div className="text-[10px] text-slate-400">Senha: {config.adminPass}</div>
-              </button>
-              <button
-                onClick={() => setRole('prof')}
-                className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left"
-              >
-                <div className="font-bold text-emerald-400">Celular Professor</div>
-                <div className="text-[10px] text-slate-400">Senha: {config.profPass}</div>
-              </button>
-              <button
-                onClick={() => { setLoggedStudentId('HEITOR12'); setRole('student'); }}
-                className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left"
-              >
-                <div className="font-bold text-purple-400">Painel Pais / Aluno</div>
-                <div className="text-[10px] text-slate-400">Ex.: HEITOR12</div>
-              </button>
-            </div>
-            {preRegs.some(p => !p.used) && (
-              <button
-                onClick={() => {
-                  const firstOpen = preRegs.find(p => !p.used);
-                  setActivePreRegToken(firstOpen.token);
-                  setRole('complete_prereg');
-                }}
-                className="w-full py-2 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium hover:bg-emerald-500/20 transition"
-              >
-                Testar Link de Pré-Cadastro ({preRegs.find(p => !p.used)?.name})
-              </button>
-            )}
-          </div>
         </div>
       </div>
     );
