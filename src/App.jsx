@@ -7,10 +7,10 @@ import {
 } from 'lucide-react';
 
 // =========================================================================
-// CONEXÃO DIRETA COM O SUPABASE (COLE SUA URL E SUA CHAVE ANON AQUI)
+// CONEXÃO DIRETA COM O SUPABASE
 // =========================================================================
 const SUPABASE_URL = 'https://rihcrmjdryujyuqxdapk.supabase.co';
-const SUPABASE_ANON_KEY = 'COLE_SUA_CHAVE_ANON_PUBLIC_AQUI';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
