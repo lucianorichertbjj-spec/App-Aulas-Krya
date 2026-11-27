@@ -4,11 +4,7 @@ import {
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
   QrCode, ChevronRight, AlertCircle
 } from 'lucide-react';
-import { db, auth, isConfigured } from './firebaseConfig';
-import {
-  collection, doc, setDoc, onSnapshot
-} from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
+import { supabase } from './firebaseConfig';
 
 // =========================================================================
 // MATRIZ OFICIAL DE GRADUAÇÃO KRYA BJJ (CORES SÓLIDAS + CLASSES TAILWIND)
@@ -110,7 +106,6 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
           className={`h-8 rounded-md shadow-md flex items-center justify-end overflow-hidden border-2 ${b.bgClass} ${b.borderClass}`}
           style={{ backgroundColor: b.hex }}
         >
-          {/* Ponteira da faixa */}
           <div
             className={`h-full w-24 flex items-center justify-evenly px-1.5 border-x border-slate-700/70 ${b.barClass}`}
             style={{ backgroundColor: b.barHex }}
@@ -124,7 +119,6 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
               />
             ))}
           </div>
-          {/* Ponta final da faixa */}
           <div
             className={`w-4 h-full ${b.bgClass}`}
             style={{ backgroundColor: b.hex }}
@@ -144,7 +138,6 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
         className={`h-8 rounded-md shadow-md relative flex items-center justify-end overflow-hidden border-2 border-slate-500/80 ${kb.bgClass}`}
         style={{ backgroundColor: kb.mainHex }}
       >
-        {/* Listra horizontal (para faixas bicolor como Cinza/Branca, Amarela/Preta, etc.) */}
         {kb.stripeClass && (
           <div
             className={`absolute inset-x-0 h-2.5 shadow-xs ${kb.stripeClass}`}
@@ -152,7 +145,6 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
           />
         )}
 
-        {/* Ponteira preta infantil */}
         <div
           className="relative z-10 h-full w-24 bg-zinc-950 border-x border-slate-700/80 flex items-center justify-evenly px-1.5"
           style={{ backgroundColor: '#09090b' }}
@@ -171,14 +163,12 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
           })}
         </div>
 
-        {/* Ponta final da faixa */}
         <div
           className={`relative z-10 w-4 h-full ${kb.bgClass}`}
           style={{ backgroundColor: kb.mainHex }}
         />
       </div>
 
-      {/* Bolinhas comportamentais infantis */}
       <div className="flex justify-center gap-2 mt-1.5">
         {[
           { key: 'rel', label: 'Relacionamento', color: 'bg-yellow-400' },
@@ -328,6 +318,9 @@ const INITIAL_CONFIG = {
 };
 
 export default function App() {
+  const [cloudConnected, setCloudConnected] = useState(false);
+  const [loadingCloud, setLoadingCloud] = useState(true);
+
   const [students, setStudents] = useState(() => {
     const saved = localStorage.getItem('krya_students_v1');
     return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
@@ -395,25 +388,69 @@ export default function App() {
     localStorage.setItem('krya_config_v1', JSON.stringify(config));
   }, [config]);
 
+  // =========================================================================
+  // SINCRONIZAÇÃO EM TEMPO REAL COM SUPABASE
+  // =========================================================================
   useEffect(() => {
-    if (!isConfigured || !auth || !db) return;
-    signInAnonymously(auth).catch(() => {});
-    const unsubStudents = onSnapshot(collection(db, 'krya_students'), (snap) => {
-      if (!snap.empty) {
-        setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    if (!supabase) {
+      setLoadingCloud(false);
+      return;
+    }
+
+    async function loadFromSupabase() {
+      try {
+        const [stRes, prRes, preRes] = await Promise.all([
+          supabase.from('krya_students').select('*'),
+          supabase.from('krya_professors').select('*'),
+          supabase.from('krya_preregs').select('*')
+        ]);
+
+        if (!stRes.error && !prRes.error && !preRes.error) {
+          setCloudConnected(true);
+          if (stRes.data?.length) setStudents(stRes.data.map(r => r.data));
+          if (prRes.data?.length) setProfessors(prRes.data.map(r => r.data));
+          if (preRes.data?.length) setPreRegs(preRes.data.map(r => r.data));
+        }
+      } catch (err) {
+        console.error('Erro ao conectar Supabase:', err);
+      } finally {
+        setLoadingCloud(false);
       }
-    });
-    const unsubProfs = onSnapshot(collection(db, 'krya_professors'), (snap) => {
-      if (!snap.empty) {
-        setProfessors(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      }
-    });
-    const unsubPre = onSnapshot(collection(db, 'krya_preregs'), (snap) => {
-      if (!snap.empty) {
-        setPreRegs(snap.docs.map(d => ({ token: d.id, ...d.data() })));
-      }
-    });
-    return () => { unsubStudents(); unsubProfs(); unsubPre(); };
+    }
+
+    loadFromSupabase();
+
+    const channel = supabase
+      .channel('krya-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_students' }, (payload) => {
+        if (payload.new?.data) {
+          setStudents(prev => {
+            const exists = prev.some(x => x.id === payload.new.data.id);
+            return exists ? prev.map(x => x.id === payload.new.data.id ? payload.new.data : x) : [...prev, payload.new.data];
+          });
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_professors' }, (payload) => {
+        if (payload.new?.data) {
+          setProfessors(prev => {
+            const exists = prev.some(x => x.id === payload.new.data.id);
+            return exists ? prev.map(x => x.id === payload.new.data.id ? payload.new.data : x) : [...prev, payload.new.data];
+          });
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_preregs' }, (payload) => {
+        if (payload.new?.data) {
+          setPreRegs(prev => {
+            const exists = prev.some(x => x.token === payload.new.data.token);
+            return exists ? prev.map(x => x.token === payload.new.data.token ? payload.new.data : x) : [payload.new.data, ...prev];
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -430,8 +467,8 @@ export default function App() {
       const exists = prev.some(x => x.id === st.id);
       return exists ? prev.map(x => x.id === st.id ? st : x) : [...prev, st];
     });
-    if (isConfigured && db) {
-      await setDoc(doc(db, 'krya_students', st.id), st, { merge: true }).catch(() => {});
+    if (supabase) {
+      await supabase.from('krya_students').upsert({ id: st.id, data: st });
     }
   };
 
@@ -440,8 +477,8 @@ export default function App() {
       const exists = prev.some(x => x.id === prof.id);
       return exists ? prev.map(x => x.id === prof.id ? prof : x) : [...prev, prof];
     });
-    if (isConfigured && db) {
-      await setDoc(doc(db, 'krya_professors', prof.id), prof, { merge: true }).catch(() => {});
+    if (supabase) {
+      await supabase.from('krya_professors').upsert({ id: prof.id, data: prof });
     }
   };
 
@@ -450,8 +487,8 @@ export default function App() {
       const exists = prev.some(x => x.token === pr.token);
       return exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
     });
-    if (isConfigured && db) {
-      await setDoc(doc(db, 'krya_preregs', pr.token), pr, { merge: true }).catch(() => {});
+    if (supabase) {
+      await supabase.from('krya_preregs').upsert({ token: pr.token, data: pr });
     }
   };
 
@@ -586,7 +623,11 @@ export default function App() {
             </button>
           </div>
 
-          {!pr ? (
+          {loadingCloud ? (
+            <div className="text-center py-8 text-sm text-slate-400">
+              Carregando ficha de pré-cadastro...
+            </div>
+          ) : !pr ? (
             <div className="text-center py-8">
               <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
               <h2 className="font-bold text-lg">Link inválido ou expirado</h2>
@@ -748,7 +789,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // TELA INICIAL DE LOGIN (SEM ATALHOS RÁPIDOS)
+  // TELA INICIAL DE LOGIN
   // =========================================================================
   if (!role) {
     return (
@@ -761,10 +802,10 @@ export default function App() {
             <h1 className="text-2xl font-black tracking-tight text-white">KRYA BJJ</h1>
             <p className="text-xs text-slate-400">Sistema Oficial de Gestão, Graduação & Portal do Aluno</p>
             <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full ${
-              isConfigured ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
+              cloudConnected ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              {isConfigured ? 'Conectado ao Firebase Nuvem' : 'Modo Local / Pronto para Firebase'}
+              <span className={`w-1.5 h-1.5 rounded-full ${cloudConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {cloudConnected ? 'Conectado ao Supabase Nuvem' : 'Sincronizando com Supabase...'}
             </span>
           </div>
 
