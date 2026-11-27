@@ -325,6 +325,12 @@ const INITIAL_CONFIG = {
   pixBeneficiary: 'KRYA BJJ ACADEMIA LTDA'
 };
 
+// Helper para extrair objeto independente de a tabela usar coluna `data` (JSONB) ou colunas planas
+function extractRecord(row) {
+  if (!row) return null;
+  return row.data && typeof row.data === 'object' ? row.data : row;
+}
+
 export default function App() {
   const [cloudConnected, setCloudConnected] = useState(false);
   const [loadingCloud, setLoadingCloud] = useState(true);
@@ -416,9 +422,11 @@ export default function App() {
 
         if (!stRes.error && !prRes.error && !preRes.error) {
           setCloudConnected(true);
-          if (stRes.data?.length) setStudents(stRes.data.map(r => r.data));
-          if (prRes.data?.length) setProfessors(prRes.data.map(r => r.data));
-          if (preRes.data?.length) setPreRegs(preRes.data.map(r => r.data));
+          if (stRes.data?.length) setStudents(stRes.data.map(extractRecord));
+          if (prRes.data?.length) setProfessors(prRes.data.map(extractRecord));
+          if (preRes.data?.length) setPreRegs(preRes.data.map(extractRecord));
+        } else {
+          console.error('Erro Supabase SELECT:', stRes.error || prRes.error || preRes.error);
         }
       } catch (err) {
         console.error('Erro ao conectar Supabase:', err);
@@ -432,26 +440,29 @@ export default function App() {
     const channel = supabase
       .channel('krya-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_students' }, (payload) => {
-        if (payload.new?.data) {
+        const rec = extractRecord(payload.new);
+        if (rec?.id) {
           setStudents(prev => {
-            const exists = prev.some(x => x.id === payload.new.data.id);
-            return exists ? prev.map(x => x.id === payload.new.data.id ? payload.new.data : x) : [...prev, payload.new.data];
+            const exists = prev.some(x => x.id === rec.id);
+            return exists ? prev.map(x => x.id === rec.id ? rec : x) : [...prev, rec];
           });
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_professors' }, (payload) => {
-        if (payload.new?.data) {
+        const rec = extractRecord(payload.new);
+        if (rec?.id) {
           setProfessors(prev => {
-            const exists = prev.some(x => x.id === payload.new.data.id);
-            return exists ? prev.map(x => x.id === payload.new.data.id ? payload.new.data : x) : [...prev, payload.new.data];
+            const exists = prev.some(x => x.id === rec.id);
+            return exists ? prev.map(x => x.id === rec.id ? rec : x) : [...prev, rec];
           });
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_preregs' }, (payload) => {
-        if (payload.new?.data) {
+        const rec = extractRecord(payload.new);
+        if (rec?.token) {
           setPreRegs(prev => {
-            const exists = prev.some(x => x.token === payload.new.data.token);
-            return exists ? prev.map(x => x.token === payload.new.data.token ? payload.new.data : x) : [payload.new.data, ...prev];
+            const exists = prev.some(x => x.token === rec.token);
+            return exists ? prev.map(x => x.token === rec.token ? rec : x) : [rec, ...prev];
           });
         }
       })
@@ -462,12 +473,35 @@ export default function App() {
     };
   }, []);
 
+  // =========================================================================
+  // LEITURA DIRETA DO TOKEN DA URL (GARANTE CARREGAMENTO NO CELULAR DO ALUNO)
+  // =========================================================================
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     if (token) {
-      setActivePreRegToken(token.toUpperCase());
+      const cleanToken = token.trim().toUpperCase();
+      setActivePreRegToken(cleanToken);
       setRole('complete_prereg');
+
+      if (supabase) {
+        setLoadingCloud(true);
+        supabase
+          .from('krya_preregs')
+          .select('*')
+          .eq('token', cleanToken)
+          .maybeSingle()
+          .then(({ data, error }) => {
+            if (!error && data) {
+              const rec = extractRecord(data);
+              setPreRegs(prev => {
+                const exists = prev.some(p => p.token === rec.token);
+                return exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
+              });
+            }
+            setLoadingCloud(false);
+          });
+      }
     }
   }, []);
 
@@ -477,7 +511,11 @@ export default function App() {
       return exists ? prev.map(x => x.id === st.id ? st : x) : [...prev, st];
     });
     if (supabase) {
-      await supabase.from('krya_students').upsert({ id: st.id, data: st });
+      const { error } = await supabase.from('krya_students').upsert({ id: st.id, data: st });
+      if (error) {
+        // Fallback caso a tabela use colunas diretas em vez da coluna JSONB `data`
+        await supabase.from('krya_students').upsert(st);
+      }
     }
   };
 
@@ -487,7 +525,10 @@ export default function App() {
       return exists ? prev.map(x => x.id === prof.id ? prof : x) : [...prev, prof];
     });
     if (supabase) {
-      await supabase.from('krya_professors').upsert({ id: prof.id, data: prof });
+      const { error } = await supabase.from('krya_professors').upsert({ id: prof.id, data: prof });
+      if (error) {
+        await supabase.from('krya_professors').upsert(prof);
+      }
     }
   };
 
@@ -497,7 +538,14 @@ export default function App() {
       return exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
     });
     if (supabase) {
-      await supabase.from('krya_preregs').upsert({ token: pr.token, data: pr });
+      const { error } = await supabase.from('krya_preregs').upsert({ token: pr.token, data: pr });
+      if (error) {
+        // Fallback caso a tabela `krya_preregs` tenha colunas planas (token, name, phone, email, used)
+        const { error: flatError } = await supabase.from('krya_preregs').upsert(pr);
+        if (flatError) {
+          alert('Erro ao salvar pré-cadastro na nuvem: ' + flatError.message);
+        }
+      }
     }
   };
 
