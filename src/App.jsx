@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   Shield, Users, Award, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
-  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft
+  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X
 } from 'lucide-react';
 
 // =========================================================================
@@ -333,7 +333,6 @@ const INITIAL_CONFIG = {
   pixBeneficiary: 'KRYA BJJ ACADEMIA LTDA'
 };
 
-// Helper para extrair objeto independente de a tabela usar coluna `data` (JSONB) ou colunas planas
 function extractRecord(row) {
   if (!row) return null;
   return row.data && typeof row.data === 'object' ? row.data : row;
@@ -402,6 +401,11 @@ export default function App() {
 
   const [manualPayStudent, setManualPayStudent] = useState(null);
 
+  // ESTADOS DOS MODAIS DE EDIÇÃO E EXCLUSÃO (MASTER)
+  const [editingStudent, setEditingStudent] = useState(null);
+  const [editingProf, setEditingProf] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const [newProfName, setNewProfName] = useState('');
   const [newProfBelt, setNewProfBelt] = useState('preta');
   const [newProfDegrees, setNewProfDegrees] = useState(0);
@@ -454,6 +458,9 @@ export default function App() {
       setShowPassModal(false);
       setShowPixModal(false);
       setManualPayStudent(null);
+      setEditingStudent(null);
+      setEditingProf(null);
+      setConfirmDelete(false);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -533,6 +540,11 @@ export default function App() {
     const channel = supabase
       .channel('krya-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_students' }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (oldId) setStudents(prev => prev.filter(x => x.id !== oldId));
+          return;
+        }
         const rec = extractRecord(payload.new);
         if (rec?.id) {
           setStudents(prev => {
@@ -542,6 +554,11 @@ export default function App() {
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_professors' }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (oldId) setProfessors(prev => prev.filter(x => x.id !== oldId));
+          return;
+        }
         const rec = extractRecord(payload.new);
         if (rec?.id) {
           setProfessors(prev => {
@@ -611,6 +628,13 @@ export default function App() {
     }
   };
 
+  const deleteStudent = async (studentId) => {
+    setStudents(prev => prev.filter(x => x.id !== studentId));
+    if (supabase) {
+      await supabase.from('krya_students').delete().eq('id', studentId);
+    }
+  };
+
   const saveProfessor = async (prof) => {
     setProfessors(prev => {
       const exists = prev.some(x => x.id === prof.id);
@@ -621,6 +645,13 @@ export default function App() {
       if (error) {
         await supabase.from('krya_professors').upsert(prof);
       }
+    }
+  };
+
+  const deleteProfessor = async (profId) => {
+    setProfessors(prev => prev.filter(x => x.id !== profId));
+    if (supabase) {
+      await supabase.from('krya_professors').delete().eq('id', profId);
     }
   };
 
@@ -1038,6 +1069,17 @@ export default function App() {
   // =========================================================================
   if (role === 'student') {
     const st = currentStudent;
+    if (!st) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 gap-4">
+          <p className="text-sm text-slate-400">Cadastro de aluno não encontrado.</p>
+          <button onClick={handleLogout} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">
+            Voltar ao Login
+          </button>
+        </div>
+      );
+    }
+
     const isAdult = st.category === 'Adultos (16+)';
     const targetClasses = isAdult
       ? getAdultClassesPerDegree(st.beltId)
@@ -1420,7 +1462,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // PAINEL MASTER & ADMINISTRADOR (COM PASTAS POR CATEGORIA E PROFESSORES)
+  // PAINEL MASTER & ADMINISTRADOR (COM PASTAS, ENGRENAGEM DE EDIÇÃO E EXCLUSÃO)
   // =========================================================================
   const isMaster = role === 'master';
   const totalRevenue = students.filter(s => s.paymentStatus === 'Em dia').reduce((acc, s) => acc + s.fee, 0);
@@ -1590,8 +1632,19 @@ export default function App() {
                       {professors
                         .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
                         .map(prof => (
-                          <div key={prof.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
-                            <div className="relative">
+                          <div
+                            key={prof.id}
+                            onClick={() => {
+                              if (isMaster) {
+                                setEditingProf({ ...prof });
+                                setConfirmDelete(false);
+                              }
+                            }}
+                            className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3 ${
+                              isMaster ? 'cursor-pointer hover:border-amber-500/40 transition' : ''
+                            }`}
+                          >
+                            <div className="relative" onClick={(e) => e.stopPropagation()}>
                               {prof.photo ? (
                                 <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
                               ) : (
@@ -1616,13 +1669,27 @@ export default function App() {
                                 </label>
                               )}
                             </div>
-                            <div className="flex-1">
-                              <div className="font-bold text-sm">{prof.name}</div>
-                              <div className="text-xs text-slate-400">{prof.classes}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm truncate">{prof.name}</div>
+                              <div className="text-xs text-slate-400 truncate">{prof.classes}</div>
                               <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
                                 Faixa {prof.beltId} • {prof.degrees}º Grau
                               </div>
                             </div>
+                            {isMaster && (
+                              <button
+                                type="button"
+                                title="Editar ou excluir professor"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingProf({ ...prof });
+                                  setConfirmDelete(false);
+                                }}
+                                className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition shrink-0"
+                              >
+                                <Settings className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         ))}
                     </div>
@@ -1684,7 +1751,18 @@ export default function App() {
                         const isAdult = st.category === 'Adultos (16+)';
                         const target = isAdult ? getAdultClassesPerDegree(st.beltId) : getKidsClassesPerDegree(st.age, st.beltId);
                         return (
-                          <div key={st.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                          <div
+                            key={st.id}
+                            onClick={() => {
+                              if (isMaster) {
+                                setEditingStudent({ ...st });
+                                setConfirmDelete(false);
+                              }
+                            }}
+                            className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5 ${
+                              isMaster ? 'cursor-pointer hover:border-amber-500/40 transition' : ''
+                            }`}
+                          >
                             <div className="flex items-center gap-3">
                               {st.photo ? (
                                 <img src={st.photo} alt={st.name} className="w-12 h-12 rounded-full object-cover" />
@@ -1700,11 +1778,28 @@ export default function App() {
                                 </div>
                                 <div className="text-[11px] text-amber-300">{st.category} • Venc. dia {st.dueDay}</div>
                               </div>
+                              {isMaster && (
+                                <button
+                                  type="button"
+                                  title="Editar ou excluir aluno"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingStudent({ ...st });
+                                    setConfirmDelete(false);
+                                  }}
+                                  className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition shrink-0"
+                                >
+                                  <Settings className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
 
                             <BeltVisual category={st.category} beltId={st.beltId} degrees={st.degrees} behavioral={st.behavioral} />
 
-                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800 gap-2">
+                            <div
+                              className="flex items-center justify-between text-xs pt-1 border-t border-slate-800 gap-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <span className="text-slate-400">
                                 {st.degrees}º Grau • {st.classesInCurrentDegree}/{target || 'IBJJF'} aulas
                               </span>
@@ -1939,6 +2034,391 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* MODAL DE EDIÇÃO E EXCLUSÃO DE ALUNO (MASTER) */}
+      {editingStudent && isMaster && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await saveStudent({
+                ...editingStudent,
+                age: calculateAge(editingStudent.birthDate),
+                degrees: Number(editingStudent.degrees) || 0,
+                classesInCurrentDegree: Number(editingStudent.classesInCurrentDegree) || 0,
+                monthsInBelt: Number(editingStudent.monthsInBelt) || 0,
+                fee: Number(editingStudent.fee) || 0,
+                dueDay: Number(editingStudent.dueDay) || 5
+              });
+              setEditingStudent(null);
+              setConfirmDelete(false);
+            }}
+            className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-md w-full space-y-3 my-auto max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-amber-400 flex items-center gap-2">
+                <Settings className="w-4 h-4" /> Editar Aluno
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setEditingStudent(null); setConfirmDelete(false); }}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  value={editingStudent.name}
+                  onChange={(e) => setEditingStudent({ ...editingStudent, name: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Login / Código</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingStudent.code}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, code: e.target.value.toUpperCase() })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Senha</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingStudent.password}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, password: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">WhatsApp</label>
+                  <input
+                    type="text"
+                    value={editingStudent.phone || ''}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, phone: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">E-mail</label>
+                  <input
+                    type="email"
+                    value={editingStudent.email || ''}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, email: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Data de Nascimento</label>
+                  <input
+                    type="date"
+                    value={editingStudent.birthDate || ''}
+                    onChange={(e) => {
+                      const birthDate = e.target.value;
+                      const age = calculateAge(birthDate);
+                      const category = getCategoryFromAge(age);
+                      const validBelts = category === 'Adultos (16+)' ? ADULT_BELTS : KIDS_BELTS;
+                      const beltId = validBelts.some(b => b.id === editingStudent.beltId) ? editingStudent.beltId : 'branca';
+                      setEditingStudent({ ...editingStudent, birthDate, age, category, beltId });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Categoria</label>
+                  <select
+                    value={editingStudent.category}
+                    onChange={(e) => {
+                      const category = e.target.value;
+                      const validBelts = category === 'Adultos (16+)' ? ADULT_BELTS : KIDS_BELTS;
+                      const beltId = validBelts.some(b => b.id === editingStudent.beltId) ? editingStudent.beltId : 'branca';
+                      setEditingStudent({ ...editingStudent, category, beltId });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  >
+                    <option value="Adultos (16+)">Adultos (16+)</option>
+                    <option value="Kids / Juvenil (7-16)">Kids / Juvenil (7-16)</option>
+                    <option value="Baby Kids (4-6)">Baby Kids (4-6)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Faixa</label>
+                  <select
+                    value={editingStudent.beltId}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, beltId: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm"
+                  >
+                    {(editingStudent.category === 'Adultos (16+)' ? ADULT_BELTS : KIDS_BELTS).map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Graus</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={8}
+                    value={editingStudent.degrees}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, degrees: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Aulas</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editingStudent.classesInCurrentDegree}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, classesInCurrentDegree: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Mensalidade (R$)</label>
+                  <input
+                    type="number"
+                    value={editingStudent.fee}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, fee: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Venc. (Dia)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={editingStudent.dueDay}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, dueDay: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Pagamento</label>
+                  <select
+                    value={editingStudent.paymentStatus}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, paymentStatus: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm"
+                  >
+                    <option value="Em dia">Em dia</option>
+                    <option value="Pendente">Pendente</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Responsável (se menor)</label>
+                <input
+                  type="text"
+                  value={editingStudent.guardianName || ''}
+                  onChange={(e) => setEditingStudent({ ...editingStudent, guardianName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Endereço</label>
+                <input
+                  type="text"
+                  value={editingStudent.address || ''}
+                  onChange={(e) => setEditingStudent({ ...editingStudent, address: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition"
+              >
+                Salvar Alterações
+              </button>
+
+              {!confirmDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full py-2.5 rounded-xl bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-bold text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir Aluno
+                </button>
+              ) : (
+                <div className="bg-red-950/70 border border-red-700 rounded-xl p-3 space-y-2 text-center">
+                  <p className="text-xs text-red-200 font-semibold">
+                    Tem certeza que deseja excluir <strong>{editingStudent.name}</strong>?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 py-2 rounded-lg bg-slate-800 text-xs font-bold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await deleteStudent(editingStudent.id);
+                        setEditingStudent(null);
+                        setConfirmDelete(false);
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold"
+                    >
+                      Sim, Excluir
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO E EXCLUSÃO DE PROFESSOR (MASTER) */}
+      {editingProf && isMaster && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await saveProfessor({
+                ...editingProf,
+                degrees: Number(editingProf.degrees) || 0
+              });
+              setEditingProf(null);
+              setConfirmDelete(false);
+            }}
+            className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-amber-400 flex items-center gap-2">
+                <Settings className="w-4 h-4" /> Editar Professor
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setEditingProf(null); setConfirmDelete(false); }}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1">Nome do Professor</label>
+                <input
+                  type="text"
+                  required
+                  value={editingProf.name}
+                  onChange={(e) => setEditingProf({ ...editingProf, name: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Turmas</label>
+                <input
+                  type="text"
+                  value={editingProf.classes || ''}
+                  onChange={(e) => setEditingProf({ ...editingProf, classes: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Faixa</label>
+                  <select
+                    value={editingProf.beltId}
+                    onChange={(e) => setEditingProf({ ...editingProf, beltId: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  >
+                    {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Graus</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={6}
+                    value={editingProf.degrees}
+                    onChange={(e) => setEditingProf({ ...editingProf, degrees: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition"
+              >
+                Salvar Alterações
+              </button>
+
+              {!confirmDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full py-2.5 rounded-xl bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-bold text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir Professor
+                </button>
+              ) : (
+                <div className="bg-red-950/70 border border-red-700 rounded-xl p-3 space-y-2 text-center">
+                  <p className="text-xs text-red-200 font-semibold">
+                    Confirmar exclusão de <strong>{editingProf.name}</strong>?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 py-2 rounded-lg bg-slate-800 text-xs font-bold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await deleteProfessor(editingProf.id);
+                        setEditingProf(null);
+                        setConfirmDelete(false);
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold"
+                    >
+                      Sim, Excluir
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
 
       {showPreRegModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
