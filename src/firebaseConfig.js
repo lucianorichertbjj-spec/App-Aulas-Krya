@@ -1,10 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
-const supabaseUrl = 'https://rihcrmjdryqjyuxqdapk.supabase.co';
-const supabaseKey = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
-
-export const supabase = createClient(supabaseUrl, supabaseKey);
- PROJETO FIREBASE (console.firebase.google.com)
+// =========================================================================
+// PASSO 1: COLE AQUI AS CHAVES DO SEU PROJETO FIREBASE (console.firebase.google.com)
 // =========================================================================
 const firebaseConfig = {
   apiKey: "COLE_SUA_API_KEY_AQUI",
