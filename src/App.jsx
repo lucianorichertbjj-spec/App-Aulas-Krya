@@ -1,53 +1,51 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Shield, Users, Award, DollarSign, CheckCircle2, Clock, Plus, Search,
-  LogOut, UserPlus, Camera, Trash2, Edit3, KeyRound, Copy, Check,
-  Smartphone, QrCode, Calendar, Send, ChevronRight, Lock, UserCheck,
-  AlertCircle, Sparkles, CreditCard, Banknote, Building2
+  Shield, Users, Award, DollarSign, CheckCircle2, Clock, Search,
+  LogOut, UserPlus, Camera, KeyRound, Copy, Check,
+  QrCode, ChevronRight, AlertCircle
 } from 'lucide-react';
 import { db, auth, isConfigured } from './firebaseConfig';
 import {
-  collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc
+  collection, doc, setDoc, onSnapshot
 } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 
 // =========================================================================
-// MATRIZ OFICIAL DE GRADUAÇÃO KRYA BJJ (BASEADA NA TABELA ENVIADA)
+// MATRIZ OFICIAL DE GRADUAÇÃO KRYA BJJ (CORES SÓLIDAS + CLASSES TAILWIND)
 // =========================================================================
 const ADULT_BELTS = [
-  { id: 'branca', name: 'Branca', color: '#f8fafc', border: '#cbd5e1', bar: '#0f172a', classesPerDegree: 30, maxDegrees: 4 },
-  { id: 'azul', name: 'Azul', color: '#2563eb', border: '#1d4ed8', bar: '#0f172a', classesPerDegree: 65, maxDegrees: 4 },
-  { id: 'roxa', name: 'Roxa', color: '#7c3aed', border: '#6d28d9', bar: '#0f172a', classesPerDegree: 75, maxDegrees: 4 },
-  { id: 'marrom', name: 'Marrom', color: '#78350f', border: '#451a03', bar: '#0f172a', classesPerDegree: 85, maxDegrees: 4 },
-  { id: 'preta', name: 'Preta', color: '#0f172a', border: '#334155', bar: '#dc2626', classesPerDegree: 0, maxDegrees: 6, ibjjf: true },
+  { id: 'branca', name: 'Branca', bgClass: 'bg-slate-100', borderClass: 'border-slate-300', barClass: 'bg-zinc-950', hex: '#f1f5f9', barHex: '#09090b', classesPerDegree: 30, maxDegrees: 4 },
+  { id: 'azul', name: 'Azul', bgClass: 'bg-blue-600', borderClass: 'border-blue-400', barClass: 'bg-zinc-950', hex: '#2563eb', barHex: '#09090b', classesPerDegree: 65, maxDegrees: 4 },
+  { id: 'roxa', name: 'Roxa', bgClass: 'bg-purple-600', borderClass: 'border-purple-400', barClass: 'bg-zinc-950', hex: '#9333ea', barHex: '#09090b', classesPerDegree: 75, maxDegrees: 4 },
+  { id: 'marrom', name: 'Marrom', bgClass: 'bg-amber-900', borderClass: 'border-amber-700', barClass: 'bg-zinc-950', hex: '#78350f', barHex: '#09090b', classesPerDegree: 85, maxDegrees: 4 },
+  { id: 'preta', name: 'Preta', bgClass: 'bg-zinc-950', borderClass: 'border-slate-600', barClass: 'bg-red-600', hex: '#09090b', barHex: '#dc2626', classesPerDegree: 0, maxDegrees: 6, ibjjf: true },
 ];
 
 const KIDS_BELTS = [
-  { id: 'branca', name: 'Branca', main: '#f8fafc', stripe: null },
-  { id: 'cinza_branca', name: 'Cinza / Branca', main: '#64748b', stripe: '#f8fafc' },
-  { id: 'cinza', name: 'Cinza', main: '#64748b', stripe: null },
-  { id: 'cinza_preta', name: 'Cinza / Preta', main: '#64748b', stripe: '#0f172a' },
-  { id: 'amarela_branca', name: 'Amarela / Branca', main: '#eab308', stripe: '#f8fafc' },
-  { id: 'amarela', name: 'Amarela', main: '#eab308', stripe: null },
-  { id: 'amarela_preta', name: 'Amarela / Preta', main: '#eab308', stripe: '#0f172a' },
-  { id: 'laranja_branca', name: 'Laranja / Branca', main: '#ea580c', stripe: '#f8fafc' },
-  { id: 'laranja', name: 'Laranja', main: '#ea580c', stripe: null },
-  { id: 'laranja_preta', name: 'Laranja / Preta', main: '#ea580c', stripe: '#0f172a' },
-  { id: 'verde_branca', name: 'Verde / Branca', main: '#16a34a', stripe: '#f8fafc' },
-  { id: 'verde', name: 'Verde', main: '#16a34a', stripe: null },
-  { id: 'verde_preta', name: 'Verde / Preta', main: '#16a34a', stripe: '#0f172a' },
+  { id: 'branca', name: 'Branca', bgClass: 'bg-slate-100', mainHex: '#f1f5f9', stripeClass: null, stripeHex: null },
+  { id: 'cinza_branca', name: 'Cinza / Branca', bgClass: 'bg-slate-500', mainHex: '#64748b', stripeClass: 'bg-white', stripeHex: '#ffffff' },
+  { id: 'cinza', name: 'Cinza', bgClass: 'bg-slate-500', mainHex: '#64748b', stripeClass: null, stripeHex: null },
+  { id: 'cinza_preta', name: 'Cinza / Preta', bgClass: 'bg-slate-500', mainHex: '#64748b', stripeClass: 'bg-zinc-950', stripeHex: '#09090b' },
+  { id: 'amarela_branca', name: 'Amarela / Branca', bgClass: 'bg-yellow-400', mainHex: '#facc15', stripeClass: 'bg-white', stripeHex: '#ffffff' },
+  { id: 'amarela', name: 'Amarela', bgClass: 'bg-yellow-400', mainHex: '#facc15', stripeClass: null, stripeHex: null },
+  { id: 'amarela_preta', name: 'Amarela / Preta', bgClass: 'bg-yellow-400', mainHex: '#facc15', stripeClass: 'bg-zinc-950', stripeHex: '#09090b' },
+  { id: 'laranja_branca', name: 'Laranja / Branca', bgClass: 'bg-orange-500', mainHex: '#f97316', stripeClass: 'bg-white', stripeHex: '#ffffff' },
+  { id: 'laranja', name: 'Laranja', bgClass: 'bg-orange-500', mainHex: '#f97316', stripeClass: null, stripeHex: null },
+  { id: 'laranja_preta', name: 'Laranja / Preta', bgClass: 'bg-orange-500', mainHex: '#f97316', stripeClass: 'bg-zinc-950', stripeHex: '#09090b' },
+  { id: 'verde_branca', name: 'Verde / Branca', bgClass: 'bg-emerald-600', mainHex: '#059669', stripeClass: 'bg-white', stripeHex: '#ffffff' },
+  { id: 'verde', name: 'Verde', bgClass: 'bg-emerald-600', mainHex: '#059669', stripeClass: null, stripeHex: null },
+  { id: 'verde_preta', name: 'Verde / Preta', bgClass: 'bg-emerald-600', mainHex: '#059669', stripeClass: 'bg-zinc-950', stripeHex: '#09090b' },
 ];
 
 function getKidsClassesPerDegree(age, beltId) {
   const isBrancaCinza = beltId.startsWith('branca') || beltId.startsWith('cinza');
   const isAmarelaLaranja = beltId.startsWith('amarela') || beltId.startsWith('laranja');
-  if (age <= 6) return 12; // Baby Kids (4 a 6)
+  if (age <= 6) return 12;
   if (age <= 12) {
     if (isBrancaCinza) return 15;
     if (isAmarelaLaranja) return 20;
     return 22;
   }
-  // 13 a 16 anos
   if (isBrancaCinza) return 20;
   if (isAmarelaLaranja) return 22;
   return 25;
@@ -74,7 +72,6 @@ function getCategoryFromAge(age) {
   return 'Adultos (16+)';
 }
 
-// Compressão automática de foto no navegador (até 300x300px)
 function compressImage(file) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -100,27 +97,38 @@ function compressImage(file) {
 }
 
 // =========================================================================
-// COMPONENTE VISUAL DA FAIXA (ADULTO & INFANTIL COM GRAUS SOBREPOSTOS)
+// COMPONENTE VISUAL DA FAIXA CORRIGIDO (CORES NITIDAS + CONTRASTE)
 // =========================================================================
 function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
   const isAdult = category === 'Adultos (16+)';
+
   if (isAdult) {
     const b = ADULT_BELTS.find(x => x.id === beltId) || ADULT_BELTS[0];
     return (
       <div className="w-full max-w-xs mx-auto my-2">
         <div
-          className="h-8 rounded-md shadow-inner flex items-center justify-end overflow-hidden border"
-          style={{ backgroundColor: b.color, borderColor: b.border }}
+          className={`h-8 rounded-md shadow-md flex items-center justify-end overflow-hidden border-2 ${b.bgClass} ${b.borderClass}`}
+          style={{ backgroundColor: b.hex }}
         >
-          <div className="h-full w-24 flex items-center justify-evenly px-1.5" style={{ backgroundColor: b.bar }}>
+          {/* Ponteira da faixa */}
+          <div
+            className={`h-full w-24 flex items-center justify-evenly px-1.5 border-x border-slate-700/70 ${b.barClass}`}
+            style={{ backgroundColor: b.barHex }}
+          >
             {Array.from({ length: b.maxDegrees }).map((_, i) => (
               <div
                 key={i}
-                className={`h-full w-1.5 transition-all ${i < degrees ? 'bg-white shadow-sm' : 'bg-white/15'}`}
+                className={`h-full w-1.5 transition-all ${
+                  i < degrees ? 'bg-white shadow-sm' : 'bg-white/20'
+                }`}
               />
             ))}
           </div>
-          <div className="w-4 h-full" style={{ backgroundColor: b.color }} />
+          {/* Ponta final da faixa */}
+          <div
+            className={`w-4 h-full ${b.bgClass}`}
+            style={{ backgroundColor: b.hex }}
+          />
         </div>
       </div>
     );
@@ -133,13 +141,22 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
   return (
     <div className="w-full max-w-xs mx-auto my-2">
       <div
-        className="h-8 rounded-md shadow-inner relative flex items-center justify-end overflow-hidden border border-slate-600"
-        style={{ backgroundColor: kb.main }}
+        className={`h-8 rounded-md shadow-md relative flex items-center justify-end overflow-hidden border-2 border-slate-500/80 ${kb.bgClass}`}
+        style={{ backgroundColor: kb.mainHex }}
       >
-        {kb.stripe && (
-          <div className="absolute inset-x-0 h-2.5" style={{ backgroundColor: kb.stripe }} />
+        {/* Listra horizontal (para faixas bicolor como Cinza/Branca, Amarela/Preta, etc.) */}
+        {kb.stripeClass && (
+          <div
+            className={`absolute inset-x-0 h-2.5 shadow-xs ${kb.stripeClass}`}
+            style={{ backgroundColor: kb.stripeHex }}
+          />
         )}
-        <div className="relative z-10 h-full w-24 bg-slate-950 flex items-center justify-evenly px-1.5">
+
+        {/* Ponteira preta infantil */}
+        <div
+          className="relative z-10 h-full w-24 bg-zinc-950 border-x border-slate-700/80 flex items-center justify-evenly px-1.5"
+          style={{ backgroundColor: '#09090b' }}
+        >
           {[0, 1, 2, 3].map((idx) => {
             const hasRed = idx < overlapDegrees;
             const hasWhite = idx < baseDegrees;
@@ -147,14 +164,21 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
               <div
                 key={idx}
                 className={`h-full w-2 transition-all ${
-                  hasRed ? 'bg-red-500' : hasWhite ? 'bg-white' : 'bg-white/15'
+                  hasRed ? 'bg-red-500' : hasWhite ? 'bg-white' : 'bg-white/20'
                 }`}
               />
             );
           })}
         </div>
-        <div className="relative z-10 w-4 h-full" style={{ backgroundColor: kb.main }} />
+
+        {/* Ponta final da faixa */}
+        <div
+          className={`relative z-10 w-4 h-full ${kb.bgClass}`}
+          style={{ backgroundColor: kb.mainHex }}
+        />
       </div>
+
+      {/* Bolinhas comportamentais infantis */}
       <div className="flex justify-center gap-2 mt-1.5">
         {[
           { key: 'rel', label: 'Relacionamento', color: 'bg-yellow-400' },
@@ -165,8 +189,8 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
           <span
             key={tag.key}
             title={tag.label}
-            className={`w-3 h-3 rounded-full border border-slate-700 ${
-              behavioral?.[tag.key] ? tag.color : 'bg-slate-800 opacity-30'
+            className={`w-3 h-3 rounded-full border border-slate-600 ${
+              behavioral?.[tag.key] ? tag.color : 'bg-slate-800 opacity-40'
             }`}
           />
         ))}
@@ -176,7 +200,7 @@ function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
 }
 
 // =========================================================================
-// DADOS INICIAIS DE EXEMPLO (SINCRONIZAM COM FIRESTORE OU LOCALSTORAGE)
+// DADOS INICIAIS DE EXEMPLO
 // =========================================================================
 const INITIAL_STUDENTS = [
   {
@@ -238,7 +262,7 @@ const INITIAL_STUDENTS = [
     age: 14,
     category: 'Kids / Juvenil (7-16)',
     beltId: 'laranja',
-    degrees: 6, // 4 brancos + 2 vermelhos sobrepostos
+    degrees: 6,
     classesInCurrentDegree: 19,
     monthsInBelt: 7,
     behavioral: { rel: true, comp: true, notas: true, hab: true },
@@ -322,8 +346,7 @@ export default function App() {
   });
   const [pendingCheckins, setPendingCheckins] = useState([]);
 
-  // Login & Navegação
-  const [role, setRole] = useState(null); // 'master' | 'admin' | 'prof' | 'student' | 'complete_prereg'
+  const [role, setRole] = useState(null);
   const [loggedStudentId, setLoggedStudentId] = useState(null);
   const [loginInput, setLoginInput] = useState('');
   const [passInput, setPassInput] = useState('');
@@ -331,7 +354,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('alunos');
   const [search, setSearch] = useState('');
 
-  // Pré-cadastro
   const [activePreRegToken, setActivePreRegToken] = useState(null);
   const [showPreRegModal, setShowPreRegModal] = useState(false);
   const [newPreName, setNewPreName] = useState('');
@@ -339,7 +361,6 @@ export default function App() {
   const [newPreEmail, setNewPreEmail] = useState('');
   const [completedCredentials, setCompletedCredentials] = useState(null);
 
-  // Formulário do aluno completando pré-cadastro
   const [compBirth, setCompBirth] = useState('2015-05-10');
   const [compGuardian, setCompGuardian] = useState('');
   const [compCep, setCompCep] = useState('');
@@ -348,24 +369,19 @@ export default function App() {
   const [compDueDay, setCompDueDay] = useState(5);
   const [compPhoto, setCompPhoto] = useState('');
 
-  // Troca de senha do aluno/pais
   const [showPassModal, setShowPassModal] = useState(false);
   const [newStudentPass, setNewStudentPass] = useState('');
 
-  // Pix modal no celular do aluno/pais
   const [showPixModal, setShowPixModal] = useState(false);
   const [copiedPix, setCopiedPix] = useState(false);
 
-  // Baixa manual modal (Master/Admin)
   const [manualPayStudent, setManualPayStudent] = useState(null);
 
-  // Novo Professor
   const [newProfName, setNewProfName] = useState('');
   const [newProfBelt, setNewProfBelt] = useState('preta');
   const [newProfDegrees, setNewProfDegrees] = useState(0);
-  const [newProfClasses, setNewProfClasses] = useState('Adultos & Kids');
+  const [newProfClasses] = useState('Adultos & Kids');
 
-  // Persistência Local + Firebase Firestore (quando configurado)
   useEffect(() => {
     localStorage.setItem('krya_students_v1', JSON.stringify(students));
   }, [students]);
@@ -400,7 +416,6 @@ export default function App() {
     return () => { unsubStudents(); unsubProfs(); unsubPre(); };
   }, []);
 
-  // Verifica parâmetro ?token= na URL ao abrir pelo link
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
@@ -547,7 +562,7 @@ export default function App() {
   );
 
   // =========================================================================
-  // TELA DE COMPLETAR PRÉ-CADASTRO (ABERTA PELO LINK DO ALUNO / RESPONSÁVEL)
+  // TELA DE COMPLETAR PRÉ-CADASTRO
   // =========================================================================
   if (role === 'complete_prereg') {
     const pr = preRegs.find(p => p.token === activePreRegToken);
@@ -584,7 +599,7 @@ export default function App() {
               </div>
               <h2 className="text-xl font-bold text-white">Cadastro Concluído!</h2>
               <p className="text-sm text-slate-300">
-                Seja bem-vindo(a) à <strong>Krya BJJ</strong>, {completedCredentials.name}. Suas credenciais exclusivas foram geradas (e enviadas para <strong>{pr.email || 'seu e-mail'}</strong>):
+                Seja bem-vindo(a) à <strong>Krya BJJ</strong>, {completedCredentials.name}. Suas credenciais exclusivas foram geradas:
               </p>
               <div className="bg-slate-950 border border-amber-500/40 rounded-xl p-4 space-y-2 text-left">
                 <div className="flex justify-between text-sm">
@@ -595,7 +610,6 @@ export default function App() {
                   <span className="text-slate-400">Senha Inicial:</span>
                   <span className="font-mono font-bold text-emerald-400 text-base">{completedCredentials.password}</span>
                 </div>
-                <p className="text-[11px] text-slate-400 pt-1">Você poderá alterar essa senha dentro do seu perfil quando quiser.</p>
               </div>
               <button
                 onClick={() => {
@@ -612,7 +626,7 @@ export default function App() {
             <div className="text-center py-8">
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
               <h2 className="font-bold text-lg">Este link já foi utilizado</h2>
-              <p className="text-sm text-slate-400 mt-1">O cadastro de <strong>{pr.name}</strong> já está ativo. Faça login com seu código e senha.</p>
+              <p className="text-sm text-slate-400 mt-1">O cadastro de <strong>{pr.name}</strong> já está ativo.</p>
             </div>
           ) : (
             <form onSubmit={handleFinishPreReg} className="space-y-4">
@@ -734,7 +748,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // TELA INICIAL DE LOGIN + ACESSO RÁPIDO PARA TESTES
+  // TELA INICIAL DE LOGIN
   // =========================================================================
   if (!role) {
     return (
@@ -856,7 +870,6 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
-        {/* Topo */}
         <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-amber-400" />
@@ -880,7 +893,6 @@ export default function App() {
         </div>
 
         <div className="max-w-md mx-auto p-4 space-y-4">
-          {/* Card Principal: Foto em cima -> Faixa -> Cor -> Graus -> Aulas Faltantes */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 text-center shadow-xl">
             <div className="relative w-28 h-28 mx-auto mb-3">
               {st.photo ? (
@@ -910,10 +922,8 @@ export default function App() {
             <h2 className="text-xl font-black text-white">{st.name}</h2>
             <p className="text-xs text-slate-400 mb-3">{st.age} anos • {st.category}</p>
 
-            {/* Desenho da Faixa */}
             <BeltVisual category={st.category} beltId={st.beltId} degrees={st.degrees} behavioral={st.behavioral} />
 
-            {/* Resumo em 3 blocos logo abaixo da faixa */}
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-2.5">
                 <div className="text-[10px] text-slate-400 uppercase">Faixa Atual</div>
@@ -953,7 +963,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Botão de Check-in Presença */}
           <button
             disabled={alreadyCheckedIn}
             onClick={() => setPendingCheckins(prev => [...prev, st.id])}
@@ -967,7 +976,6 @@ export default function App() {
             {alreadyCheckedIn ? 'Presença Enviada (Aguardando Professor)' : 'Registrar Presença no Treino de Hoje'}
           </button>
 
-          {/* Card Mensalidade & Pix */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -993,7 +1001,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Vitrine de Professores da Krya BJJ */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Professores Krya BJJ</h3>
             <div className="space-y-2.5">
@@ -1022,7 +1029,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Modal Pix */}
         {showPixModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-4 text-center">
@@ -1056,7 +1062,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Modal Trocar Senha */}
         {showPassModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3">
@@ -1095,7 +1100,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // CELULAR DO PROFESSOR (CHAMADA & GRADUAÇÃO NO TATAME)
+  // CELULAR DO PROFESSOR
   // =========================================================================
   if (role === 'prof') {
     return (
@@ -1232,7 +1237,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // PAINEL MASTER (DONO) & ADMINISTRADOR
+  // PAINEL MASTER & ADMINISTRADOR
   // =========================================================================
   const isMaster = role === 'master';
   const totalRevenue = students.filter(s => s.paymentStatus === 'Em dia').reduce((acc, s) => acc + s.fee, 0);
@@ -1240,7 +1245,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Cabeçalho */}
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2">
           <Shield className="w-6 h-6 text-amber-400" />
@@ -1267,7 +1271,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Navegação por Abas */}
       <div className="max-w-4xl mx-auto px-4 pt-4">
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
@@ -1293,7 +1296,6 @@ export default function App() {
           ))}
         </div>
 
-        {/* ABA: ALUNOS */}
         {activeTab === 'alunos' && (
           <div className="mt-4 space-y-3">
             <div className="relative">
@@ -1360,7 +1362,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ABA: PRÉ-CADASTROS (LINK EXCLUSIVO) */}
         {activeTab === 'precadastro' && (
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -1418,7 +1419,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ABA: FINANCEIRO & BAIXA MANUAL */}
         {activeTab === 'financeiro' && (
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -1462,7 +1462,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ABA: PROFESSORES (MASTER) */}
         {activeTab === 'professores' && isMaster && (
           <div className="mt-4 space-y-4">
             <div className="grid sm:grid-cols-2 gap-3">
@@ -1551,7 +1550,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ABA: CONFIGURAÇÕES & SENHAS (MASTER) */}
         {activeTab === 'config' && isMaster && (
           <div className="mt-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <h3 className="font-bold text-sm text-amber-400">Senhas de Acesso & Mensalidades</h3>
@@ -1608,7 +1606,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Modal Criar Pré-Cadastro */}
       {showPreRegModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleCreatePreReg} className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3">
@@ -1650,7 +1647,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Baixa Manual (Maquininha / Dinheiro / Pix Conferido) */}
       {manualPayStudent && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3">
