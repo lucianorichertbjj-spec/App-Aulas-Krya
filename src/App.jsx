@@ -100,6 +100,14 @@ function compressImage(file) {
   });
 }
 
+function buildCredentialsWhatsAppLink(phone, name, code, password) {
+  const appUrl = window.location.origin;
+  const msg = `Olá ${name}! Seu cadastro na Krya BJJ está ativo.\n\nAcesse o aplicativo: ${appUrl}\nLogin / Código: ${code}\nSenha: ${password}`;
+  const digits = (phone || '').replace(/\D/g, '');
+  const prefix = digits ? `https://wa.me/55${digits}?text=` : 'https://wa.me/?text=';
+  return `${prefix}${encodeURIComponent(msg)}`;
+}
+
 // =========================================================================
 // COMPONENTE VISUAL DA FAIXA CORRIGIDO (CORES NITIDAS + CONTRASTE)
 // =========================================================================
@@ -376,6 +384,7 @@ export default function App() {
   const [newPrePhone, setNewPrePhone] = useState('');
   const [newPreEmail, setNewPreEmail] = useState('');
   const [completedCredentials, setCompletedCredentials] = useState(null);
+  const [copiedCreds, setCopiedCreds] = useState(false);
 
   const [compBirth, setCompBirth] = useState('2015-05-10');
   const [compGuardian, setCompGuardian] = useState('');
@@ -687,7 +696,13 @@ export default function App() {
 
     await saveStudent(newStudent);
     await savePreReg({ ...pr, used: true, generatedCode: code });
-    setCompletedCredentials({ name: newStudent.name, code, password: generatedPass, studentId: newStudent.id });
+    setCompletedCredentials({
+      name: newStudent.name,
+      phone: newStudent.phone,
+      code,
+      password: generatedPass,
+      studentId: newStudent.id
+    });
   };
 
   const currentStudent = useMemo(
@@ -749,16 +764,46 @@ export default function App() {
                   <span className="font-mono font-bold text-emerald-400 text-base">{completedCredentials.password}</span>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setLoggedStudentId(completedCredentials.studentId);
-                  setCompletedCredentials(null);
-                  setRole('student');
-                }}
-                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition"
-              >
-                Entrar no Meu Painel Agora
-              </button>
+
+              <div className="space-y-2">
+                <a
+                  href={buildCredentialsWhatsAppLink(
+                    completedCredentials.phone,
+                    completedCredentials.name,
+                    completedCredentials.code,
+                    completedCredentials.password
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition"
+                >
+                  Enviar / Salvar Acesso no WhatsApp
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(
+                      `Krya BJJ - Login: ${completedCredentials.code} | Senha: ${completedCredentials.password}`
+                    );
+                    setCopiedCreds(true);
+                    setTimeout(() => setCopiedCreds(false), 2500);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2"
+                >
+                  {copiedCreds ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
+                  {copiedCreds ? 'Login e Senha Copiados!' : 'Copiar Login e Senha'}
+                </button>
+                <button
+                  onClick={() => {
+                    setLoggedStudentId(completedCredentials.studentId);
+                    setCompletedCredentials(null);
+                    setRole('student');
+                  }}
+                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition"
+                >
+                  Entrar no Meu Painel Agora
+                </button>
+              </div>
             </div>
           ) : pr.used ? (
             <div className="text-center py-8">
@@ -1611,11 +1656,19 @@ export default function App() {
 
                             <BeltVisual category={st.category} beltId={st.beltId} degrees={st.degrees} behavioral={st.behavioral} />
 
-                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800">
+                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800 gap-2">
                               <span className="text-slate-400">
                                 {st.degrees}º Grau • {st.classesInCurrentDegree}/{target || 'IBJJF'} aulas
                               </span>
-                              <div className="flex gap-1.5">
+                              <div className="flex gap-1.5 flex-wrap justify-end">
+                                <a
+                                  href={buildCredentialsWhatsAppLink(st.phone, st.name, st.code, st.password)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-bold"
+                                >
+                                  WhatsApp
+                                </a>
                                 <button
                                   onClick={() => saveStudent({ ...st, classesInCurrentDegree: st.classesInCurrentDegree + 1 })}
                                   className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold"
@@ -1659,20 +1712,34 @@ export default function App() {
             {preRegs.map(pr => {
               const link = `${window.location.origin}/?token=${pr.token}`;
               const waText = encodeURIComponent(`Olá ${pr.name}! Complete sua ficha de matrícula na Krya BJJ pelo link exclusivo: ${link}`);
+              const matchedStudent = students.find(
+                s =>
+                  (pr.generatedCode && s.code === pr.generatedCode) ||
+                  s.name.toLowerCase() === (pr.name || '').toLowerCase()
+              );
+
               return (
                 <div key={pr.token} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-bold text-white">{pr.name}</div>
                       <div className="text-xs text-slate-400">{pr.phone} • {pr.email}</div>
+                      {pr.used && matchedStudent && (
+                        <div className="text-[11px] font-mono text-amber-300 mt-1">
+                          Login: {matchedStudent.code} • Senha: {matchedStudent.password}
+                        </div>
+                      )}
                     </div>
                     <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
                       pr.used ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
                     }`}>
-                      {pr.used ? `Ativo (${pr.generatedCode || 'Concluído'})` : 'Aguardando Aluno'}
+                      {pr.used
+                        ? `Ativo (${matchedStudent?.code || pr.generatedCode || 'Concluído'})`
+                        : 'Aguardando Aluno'}
                     </span>
                   </div>
-                  {!pr.used && (
+
+                  {!pr.used ? (
                     <div className="flex flex-wrap gap-2 pt-1">
                       <button
                         onClick={() => { setActivePreRegToken(pr.token); setRole('complete_prereg'); }}
@@ -1694,6 +1761,30 @@ export default function App() {
                       >
                         Enviar WhatsApp
                       </a>
+                    </div>
+                  ) : matchedStudent && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <a
+                        href={buildCredentialsWhatsAppLink(
+                          matchedStudent.phone || pr.phone,
+                          matchedStudent.name,
+                          matchedStudent.code,
+                          matchedStudent.password
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
+                      >
+                        Enviar Login e Senha no WhatsApp
+                      </a>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(
+                          `Krya BJJ - Login: ${matchedStudent.code} | Senha: ${matchedStudent.password}`
+                        )}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar Acesso
+                      </button>
                     </div>
                   )}
                 </div>
