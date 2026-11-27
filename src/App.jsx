@@ -109,7 +109,7 @@ function buildCredentialsWhatsAppLink(phone, name, code, password) {
 }
 
 // =========================================================================
-// COMPONENTE VISUAL DA FAIXA CORRIGIDO (CORES NITIDAS + CONTRASTE)
+// COMPONENTE VISUAL DA FAIXA
 // =========================================================================
 function BeltVisual({ category, beltId, degrees = 0, behavioral = {} }) {
   const isAdult = category === 'Adultos (16+)';
@@ -384,8 +384,13 @@ export default function App() {
   const [newPreEmail, setNewPreEmail] = useState('');
   const [completedCredentials, setCompletedCredentials] = useState(null);
   const [copiedCreds, setCopiedCreds] = useState(false);
+  const [submittingPreReg, setSubmittingPreReg] = useState(false);
 
-  const [compBirth, setCompBirth] = useState('2015-05-10');
+  // CAMPOS DA FICHA CADASTRAL DO ALUNO (PRÉ-PREENCHIDOS AO ABRIR O LINK)
+  const [compName, setCompName] = useState('');
+  const [compPhone, setCompPhone] = useState('');
+  const [compEmail, setCompEmail] = useState('');
+  const [compBirth, setCompBirth] = useState('2000-01-01');
   const [compGuardian, setCompGuardian] = useState('');
   const [compCep, setCompCep] = useState('');
   const [compAddress, setCompAddress] = useState('');
@@ -441,8 +446,20 @@ export default function App() {
     }
   }, [loggedStudentId]);
 
+  // PRÉ-PREENCHE OS CAMPOS DA FICHA QUANDO O PRÉ-CADASTRO CARREGA
+  useEffect(() => {
+    if (role === 'complete_prereg' && activePreRegToken) {
+      const pr = preRegs.find(p => p.token === activePreRegToken);
+      if (pr) {
+        setCompName(prev => prev || pr.name || '');
+        setCompPhone(prev => prev || pr.phone || '');
+        setCompEmail(prev => prev || pr.email || '');
+      }
+    }
+  }, [role, activePreRegToken, preRegs]);
+
   // =========================================================================
-  // CONTROLE DO BOTÃO VOLTAR DO CELULAR (EVITA FECHAR O APP AO SAIR DE PASTAS)
+  // CONTROLE DO BOTÃO VOLTAR DO CELULAR
   // =========================================================================
   useEffect(() => {
     const handlePopState = (event) => {
@@ -499,6 +516,9 @@ export default function App() {
     setSelectedFolder(null);
     localStorage.removeItem('krya_role_v1');
     localStorage.removeItem('krya_student_id_v1');
+    if (window.location.search.includes('token=')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   };
 
   // =========================================================================
@@ -591,7 +611,7 @@ export default function App() {
   }, []);
 
   // =========================================================================
-  // LEITURA DIRETA DO TOKEN DA URL (GARANTE CARREGAMENTO NO CELULAR DO ALUNO)
+  // LEITURA DIRETA DO TOKEN DA URL (ABRE A FICHA CADASTRAL NO CELULAR DO ALUNO)
   // =========================================================================
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -611,6 +631,9 @@ export default function App() {
           .then(({ data, error }) => {
             if (!error && data) {
               const rec = extractRecord(data);
+              setCompName(rec.name || '');
+              setCompPhone(rec.phone || '');
+              setCompEmail(rec.email || '');
               setPreRegs(prev => {
                 const exists = prev.some(p => p.token === rec.token);
                 return exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
@@ -790,49 +813,64 @@ export default function App() {
   const handleFinishPreReg = async (e) => {
     e.preventDefault();
     const pr = preRegs.find(p => p.token === activePreRegToken);
-    if (!pr || pr.used) return;
+    if (!pr || pr.used || submittingPreReg) return;
 
-    const age = calculateAge(compBirth);
-    const category = getCategoryFromAge(age);
-    const fee = age <= 16 ? config.kidsFee : config.adultFee;
-    const firstName = pr.name.split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '');
-    const code = `${firstName}${String(age).padStart(2, '0')}`;
-    const generatedPass = String(Math.floor(100000 + Math.random() * 900000));
+    setSubmittingPreReg(true);
+    try {
+      const finalName = compName.trim() || pr.name;
+      const finalPhone = compPhone.trim() || pr.phone;
+      const finalEmail = compEmail.trim() || pr.email;
+      const age = calculateAge(compBirth);
+      const category = getCategoryFromAge(age);
+      const fee = age <= 16 ? config.kidsFee : config.adultFee;
+      const firstName = finalName.split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '') || 'ALUNO';
+      const code = `${firstName}${String(age).padStart(2, '0')}`;
+      const generatedPass = String(Math.floor(100000 + Math.random() * 900000));
 
-    const newStudent = {
-      id: code + '_' + Date.now().toString().slice(-3),
-      code,
-      password: generatedPass,
-      name: pr.name,
-      email: pr.email,
-      phone: pr.phone,
-      birthDate: compBirth,
-      age,
-      category,
-      beltId: 'branca',
-      degrees: 0,
-      classesInCurrentDegree: 0,
-      monthsInBelt: 0,
-      behavioral: { rel: false, comp: false, notas: false, hab: false },
-      guardianName: age <= 16 ? compGuardian : '',
-      address: `${compAddress}${compNumber ? ', nº ' + compNumber : ''}`,
-      dueDay: Number(compDueDay),
-      fee,
-      paymentStatus: 'Pendente',
-      lastPaymentMethod: '',
-      status: 'Ativo',
-      photo: compPhoto
-    };
+      const newStudent = {
+        id: code + '_' + Date.now().toString().slice(-3),
+        code,
+        password: generatedPass,
+        name: finalName,
+        email: finalEmail,
+        phone: finalPhone,
+        birthDate: compBirth,
+        age,
+        category,
+        beltId: 'branca',
+        degrees: 0,
+        classesInCurrentDegree: 0,
+        monthsInBelt: 0,
+        behavioral: { rel: false, comp: false, notas: false, hab: false },
+        guardianName: age <= 16 ? compGuardian : '',
+        address: `${compAddress}${compNumber ? ', nº ' + compNumber : ''}`,
+        dueDay: Number(compDueDay),
+        fee,
+        paymentStatus: 'Pendente',
+        lastPaymentMethod: '',
+        status: 'Ativo',
+        photo: compPhoto
+      };
 
-    await saveStudent(newStudent);
-    await savePreReg({ ...pr, used: true, generatedCode: code });
-    setCompletedCredentials({
-      name: newStudent.name,
-      phone: newStudent.phone,
-      code,
-      password: generatedPass,
-      studentId: newStudent.id
-    });
+      await saveStudent(newStudent);
+      await savePreReg({
+        ...pr,
+        name: finalName,
+        phone: finalPhone,
+        email: finalEmail,
+        used: true,
+        generatedCode: code
+      });
+      setCompletedCredentials({
+        name: newStudent.name,
+        phone: newStudent.phone,
+        code,
+        password: generatedPass,
+        studentId: newStudent.id
+      });
+    } finally {
+      setSubmittingPreReg(false);
+    }
   };
 
   const currentStudent = useMemo(
@@ -841,7 +879,7 @@ export default function App() {
   );
 
   // =========================================================================
-  // TELA DE COMPLETAR PRÉ-CADASTRO
+  // TELA DE FICHA CADASTRAL DO ALUNO (LINK DE PRÉ-CADASTRO)
   // =========================================================================
   if (role === 'complete_prereg') {
     const pr = preRegs.find(p => p.token === activePreRegToken);
@@ -855,7 +893,7 @@ export default function App() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Shield className="w-6 h-6 text-amber-400" />
-              <span className="font-bold tracking-wide text-lg">KRYA BJJ — Matrícula</span>
+              <span className="font-bold tracking-wide text-lg">KRYA BJJ — Ficha Cadastral</span>
             </div>
             <button
               onClick={() => { setCompletedCredentials(null); handleLogout(); }}
@@ -880,9 +918,9 @@ export default function App() {
               <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h2 className="text-xl font-bold text-white">Cadastro Concluído!</h2>
+              <h2 className="text-xl font-bold text-white">Cadastro Salvo com Sucesso!</h2>
               <p className="text-sm text-slate-300">
-                Seja bem-vindo(a) à <strong>Krya BJJ</strong>, {completedCredentials.name}. Suas credenciais exclusivas foram geradas:
+                Seja bem-vindo(a) à <strong>Krya BJJ</strong>, {completedCredentials.name}. Guarde seu login e senha abaixo:
               </p>
               <div className="bg-slate-950 border border-amber-500/40 rounded-xl p-4 space-y-2 text-left">
                 <div className="flex justify-between text-sm">
@@ -890,7 +928,7 @@ export default function App() {
                   <span className="font-mono font-bold text-amber-400 text-base">{completedCredentials.code}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Senha Inicial:</span>
+                  <span className="text-slate-400">Senha de Acesso:</span>
                   <span className="font-mono font-bold text-emerald-400 text-base">{completedCredentials.password}</span>
                 </div>
               </div>
@@ -928,6 +966,7 @@ export default function App() {
                     setLoggedStudentId(completedCredentials.studentId);
                     setCompletedCredentials(null);
                     setRole('student');
+                    window.history.replaceState({}, '', window.location.pathname);
                   }}
                   className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition"
                 >
@@ -936,17 +975,56 @@ export default function App() {
               </div>
             </div>
           ) : pr.used ? (
-            <div className="text-center py-8">
-              <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+            <div className="text-center py-8 space-y-3">
+              <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
               <h2 className="font-bold text-lg">Este link já foi utilizado</h2>
-              <p className="text-sm text-slate-400 mt-1">O cadastro de <strong>{pr.name}</strong> já está ativo.</p>
+              <p className="text-sm text-slate-400">O cadastro de <strong>{pr.name}</strong> já está ativo.</p>
+              <button
+                onClick={handleLogout}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+              >
+                Ir para a Tela de Login
+              </button>
             </div>
           ) : (
-            <form onSubmit={handleFinishPreReg} className="space-y-4">
-              <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs space-y-1">
-                <div className="text-amber-400 font-semibold">Pré-cadastro confirmado ({pr.token})</div>
-                <div><strong>Aluno:</strong> {pr.name}</div>
-                <div><strong>Contato:</strong> {pr.phone} • {pr.email}</div>
+            <form onSubmit={handleFinishPreReg} className="space-y-3.5">
+              <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs">
+                <div className="text-amber-400 font-semibold">Pré-cadastro ({pr.token})</div>
+                <p className="text-slate-400 mt-0.5">Complete seus dados abaixo e salve para receber seu login e senha.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Nome Completo do Aluno</label>
+                <input
+                  type="text"
+                  required
+                  value={compName}
+                  onChange={(e) => setCompName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">WhatsApp</label>
+                  <input
+                    type="text"
+                    required
+                    value={compPhone}
+                    onChange={(e) => setCompPhone(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">E-mail</label>
+                  <input
+                    type="email"
+                    required
+                    value={compEmail}
+                    onChange={(e) => setCompEmail(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1049,9 +1127,10 @@ export default function App() {
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg"
+                disabled={submittingPreReg}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-sm transition shadow-lg"
               >
-                Finalizar Cadastro e Gerar Meu Login
+                {submittingPreReg ? 'Salvando Ficha...' : 'Salvar Ficha e Gerar Login e Senha'}
               </button>
             </form>
           )}
@@ -1513,7 +1592,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // PAINEL MASTER & ADMINISTRADOR (PASTAS, ENGRENAGEM E PRÉ-CADASTROS CLICÁVEIS)
+  // PAINEL MASTER & ADMINISTRADOR
   // =========================================================================
   const isMaster = role === 'master';
   const totalRevenue = students.filter(s => s.paymentStatus === 'Em dia').reduce((acc, s) => acc + s.fee, 0);
@@ -1963,7 +2042,13 @@ export default function App() {
                     {!pr.used ? (
                       <>
                         <button
-                          onClick={() => { setActivePreRegToken(pr.token); setRole('complete_prereg'); }}
+                          onClick={() => {
+                            setActivePreRegToken(pr.token);
+                            setCompName(pr.name || '');
+                            setCompPhone(pr.phone || '');
+                            setCompEmail(pr.email || '');
+                            setRole('complete_prereg');
+                          }}
                           className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
                         >
                           Abrir Ficha do Aluno (Testar)
@@ -2641,7 +2726,7 @@ export default function App() {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleCreatePreReg} className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3">
             <h3 className="font-bold text-base text-white">Novo Pré-Cadastro (Gerar Link)</h3>
-            <p className="text-xs text-slate-400">O aluno receberá o link para preencher endereço e dia de vencimento e ganhará login e senha automáticos.</p>
+            <p className="text-xs text-slate-400">O aluno receberá o link para preencher a ficha cadastral e ganhará login e senha automáticos.</p>
             <input
               type="text"
               required
