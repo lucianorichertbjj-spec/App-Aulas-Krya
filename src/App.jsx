@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   Shield, Users, Award, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
-  QrCode, ChevronRight, AlertCircle
+  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft
 } from 'lucide-react';
 
 // =========================================================================
@@ -353,6 +353,7 @@ export default function App() {
   const [passInput, setPassInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [activeTab, setActiveTab] = useState('alunos');
+  const [selectedFolder, setSelectedFolder] = useState(null);
   const [search, setSearch] = useState('');
 
   const [activePreRegToken, setActivePreRegToken] = useState(null);
@@ -507,10 +508,10 @@ export default function App() {
     const pass = passInput.trim();
 
     if (pass === config.masterPass || (user.toLowerCase() === 'master' && pass === config.masterPass)) {
-      setRole('master'); setActiveTab('alunos'); return;
+      setRole('master'); setActiveTab('alunos'); setSelectedFolder(null); return;
     }
     if (pass === config.adminPass || (user.toLowerCase() === 'admin' && pass === config.adminPass)) {
-      setRole('admin'); setActiveTab('alunos'); return;
+      setRole('admin'); setActiveTab('alunos'); setSelectedFolder(null); return;
     }
     if (pass === config.profPass || (user.toLowerCase() === 'prof' && pass === config.profPass)) {
       setRole('prof'); return;
@@ -1238,11 +1239,52 @@ export default function App() {
   }
 
   // =========================================================================
-  // PAINEL MASTER & ADMINISTRADOR
+  // PAINEL MASTER & ADMINISTRADOR (COM PASTAS POR CATEGORIA E PROFESSORES)
   // =========================================================================
   const isMaster = role === 'master';
   const totalRevenue = students.filter(s => s.paymentStatus === 'Em dia').reduce((acc, s) => acc + s.fee, 0);
   const pendingRevenue = students.filter(s => s.paymentStatus !== 'Em dia').reduce((acc, s) => acc + s.fee, 0);
+
+  const adultStudents = students.filter(s => s.category === 'Adultos (16+)');
+  const kidsStudents = students.filter(s => s.category === 'Kids / Juvenil (7-16)');
+  const babyKidsStudents = students.filter(s => s.category === 'Baby Kids (4-6)');
+
+  const folderDefinitions = [
+    {
+      id: 'adultos',
+      title: 'Alunos Adultos',
+      subtitle: 'Categoria 16+ anos',
+      count: adultStudents.length,
+      accentClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+      items: adultStudents
+    },
+    {
+      id: 'kids',
+      title: 'Kids / Juvenil',
+      subtitle: 'Categoria 7 a 16 anos',
+      count: kidsStudents.length,
+      accentClass: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+      items: kidsStudents
+    },
+    {
+      id: 'baby_kids',
+      title: 'Baby Kids',
+      subtitle: 'Categoria 4 a 6 anos',
+      count: babyKidsStudents.length,
+      accentClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+      items: babyKidsStudents
+    },
+    {
+      id: 'professores',
+      title: 'Professores',
+      subtitle: 'Equipe técnica Krya BJJ',
+      count: professors.length,
+      accentClass: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+      items: professors
+    }
+  ];
+
+  const currentFolderObj = folderDefinitions.find(f => f.id === selectedFolder);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
@@ -1264,7 +1306,7 @@ export default function App() {
             <UserPlus className="w-4 h-4" /> Pré-Cadastro
           </button>
           <button
-            onClick={() => setRole(null)}
+            onClick={() => { setRole(null); setSelectedFolder(null); }}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
             <LogOut className="w-4 h-4" />
@@ -1275,17 +1317,16 @@ export default function App() {
       <div className="max-w-4xl mx-auto px-4 pt-4">
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
-            { id: 'alunos', label: `Alunos (${students.length})`, icon: Users },
+            { id: 'alunos', label: `Turmas & Equipe (${students.length + professors.length})`, icon: Users },
             { id: 'precadastro', label: `Pré-Cadastros (${preRegs.filter(p => !p.used).length})`, icon: LinkIconFallback },
             { id: 'financeiro', label: 'Financeiro & Baixas', icon: DollarSign },
             ...(isMaster ? [
-              { id: 'professores', label: 'Professores', icon: Award },
               { id: 'config', label: 'Configurações & Senhas', icon: KeyRound }
             ] : [])
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { setActiveTab(tab.id); setSelectedFolder(null); setSearch(''); }}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${
                 activeTab === tab.id
                   ? 'bg-amber-500 text-slate-950'
@@ -1298,68 +1339,221 @@ export default function App() {
         </div>
 
         {activeTab === 'alunos' && (
-          <div className="mt-4 space-y-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                placeholder="Buscar por nome ou código..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm"
-              />
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-3">
-              {students
-                .filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.toLowerCase().includes(search.toLowerCase()))
-                .map(st => {
-                  const isAdult = st.category === 'Adultos (16+)';
-                  const target = isAdult ? getAdultClassesPerDegree(st.beltId) : getKidsClassesPerDegree(st.age, st.beltId);
-                  return (
-                    <div key={st.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5">
-                      <div className="flex items-center gap-3">
-                        {st.photo ? (
-                          <img src={st.photo} alt={st.name} className="w-12 h-12 rounded-full object-cover" />
-                        ) : (
-                          <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
-                            {st.name[0]}
+          <div className="mt-4 space-y-4">
+            {!selectedFolder ? (
+              <>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Selecione uma pasta para visualizar
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {folderDefinitions.map(folder => (
+                    <button
+                      key={folder.id}
+                      onClick={() => { setSelectedFolder(folder.id); setSearch(''); }}
+                      className="bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 flex items-center justify-between text-left transition group shadow-lg"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center ${folder.accentClass}`}>
+                          <Folder className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="font-black text-base text-white group-hover:text-amber-400 transition">
+                            {folder.title}
                           </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm text-white truncate">{st.name}</div>
-                          <div className="text-[11px] text-slate-400 font-mono">
-                            Login: {st.code} • Senha: {st.password}
-                          </div>
-                          <div className="text-[11px] text-amber-300">{st.category} • Venc. dia {st.dueDay}</div>
+                          <div className="text-xs text-slate-400">{folder.subtitle}</div>
                         </div>
                       </div>
-
-                      <BeltVisual category={st.category} beltId={st.beltId} degrees={st.degrees} behavioral={st.behavioral} />
-
-                      <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800">
-                        <span className="text-slate-400">
-                          {st.degrees}º Grau • {st.classesInCurrentDegree}/{target || 'IBJJF'} aulas
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-full bg-slate-950 border border-slate-800 text-xs font-black text-amber-400">
+                          {folder.count}
                         </span>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => saveStudent({ ...st, classesInCurrentDegree: st.classesInCurrentDegree + 1 })}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold"
-                          >
-                            +Aula
-                          </button>
-                          <button
-                            onClick={() => { setLoggedStudentId(st.id); setRole('student'); }}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                          >
-                            Ver App
-                          </button>
-                        </div>
+                        <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-amber-400 transition" />
                       </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
+                  <button
+                    onClick={() => { setSelectedFolder(null); setSearch(''); }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300 px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> Voltar às Pastas
+                  </button>
+                  <div className="text-right">
+                    <div className="font-black text-sm text-white">{currentFolderObj?.title}</div>
+                    <div className="text-[11px] text-slate-400">{currentFolderObj?.count} cadastrados</div>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    placeholder={
+                      selectedFolder === 'professores'
+                        ? 'Buscar professor por nome...'
+                        : 'Buscar aluno por nome ou código...'
+                    }
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm"
+                  />
+                </div>
+
+                {selectedFolder === 'professores' ? (
+                  <div className="space-y-4">
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {professors
+                        .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+                        .map(prof => (
+                          <div key={prof.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
+                            <div className="relative">
+                              {prof.photo ? (
+                                <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
+                              ) : (
+                                <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
+                                  {prof.name.replace('Prof. ', '')[0]}
+                                </div>
+                              )}
+                              {isMaster && (
+                                <label className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1.5 rounded-full cursor-pointer">
+                                  <Camera className="w-3 h-3" />
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async (e) => {
+                                      if (e.target.files?.[0]) {
+                                        const compressed = await compressImage(e.target.files[0]);
+                                        saveProfessor({ ...prof, photo: compressed });
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-bold text-sm">{prof.name}</div>
+                              <div className="text-xs text-slate-400">{prof.classes}</div>
+                              <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
+                                Faixa {prof.beltId} • {prof.degrees}º Grau
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                     </div>
-                  );
-                })}
-            </div>
+
+                    {isMaster && (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!newProfName.trim()) return;
+                          saveProfessor({
+                            id: 'prof-' + Date.now(),
+                            name: newProfName.trim(),
+                            beltId: newProfBelt,
+                            degrees: Number(newProfDegrees),
+                            classes: newProfClasses,
+                            photo: ''
+                          });
+                          setNewProfName('');
+                        }}
+                        className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3"
+                      >
+                        <h3 className="font-bold text-sm">Cadastrar Novo Professor</h3>
+                        <input
+                          type="text"
+                          placeholder="Nome (Ex.: Prof. Matheus)"
+                          value={newProfName}
+                          onChange={(e) => setNewProfName(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <select
+                            value={newProfBelt}
+                            onChange={(e) => setNewProfBelt(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                          >
+                            {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
+                          </select>
+                          <input
+                            type="number"
+                            min={0}
+                            max={6}
+                            placeholder="Graus"
+                            value={newProfDegrees}
+                            onChange={(e) => setNewProfDegrees(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">
+                          Adicionar Professor
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {(currentFolderObj?.items || [])
+                      .filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.toLowerCase().includes(search.toLowerCase()))
+                      .map(st => {
+                        const isAdult = st.category === 'Adultos (16+)';
+                        const target = isAdult ? getAdultClassesPerDegree(st.beltId) : getKidsClassesPerDegree(st.age, st.beltId);
+                        return (
+                          <div key={st.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                            <div className="flex items-center gap-3">
+                              {st.photo ? (
+                                <img src={st.photo} alt={st.name} className="w-12 h-12 rounded-full object-cover" />
+                              ) : (
+                                <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
+                                  {st.name[0]}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm text-white truncate">{st.name}</div>
+                                <div className="text-[11px] text-slate-400 font-mono">
+                                  Login: {st.code} • Senha: {st.password}
+                                </div>
+                                <div className="text-[11px] text-amber-300">{st.category} • Venc. dia {st.dueDay}</div>
+                              </div>
+                            </div>
+
+                            <BeltVisual category={st.category} beltId={st.beltId} degrees={st.degrees} behavioral={st.behavioral} />
+
+                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800">
+                              <span className="text-slate-400">
+                                {st.degrees}º Grau • {st.classesInCurrentDegree}/{target || 'IBJJF'} aulas
+                              </span>
+                              <div className="flex gap-1.5">
+                                <button
+                                  onClick={() => saveStudent({ ...st, classesInCurrentDegree: st.classesInCurrentDegree + 1 })}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold"
+                                >
+                                  +Aula
+                                </button>
+                                <button
+                                  onClick={() => { setLoggedStudentId(st.id); setRole('student'); }}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                                >
+                                  Ver App
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    {(currentFolderObj?.items || []).length === 0 && (
+                      <div className="col-span-full text-center py-8 text-xs text-slate-400 bg-slate-900/50 border border-slate-800 rounded-2xl">
+                        Nenhum cadastro encontrado nesta pasta ainda.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1460,94 +1654,6 @@ export default function App() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {activeTab === 'professores' && isMaster && (
-          <div className="mt-4 space-y-4">
-            <div className="grid sm:grid-cols-2 gap-3">
-              {professors.map(prof => (
-                <div key={prof.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
-                  <div className="relative">
-                    {prof.photo ? (
-                      <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
-                        {prof.name.replace('Prof. ', '')[0]}
-                      </div>
-                    )}
-                    <label className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1.5 rounded-full cursor-pointer">
-                      <Camera className="w-3 h-3" />
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          if (e.target.files?.[0]) {
-                            const compressed = await compressImage(e.target.files[0]);
-                            saveProfessor({ ...prof, photo: compressed });
-                          }
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-bold text-sm">{prof.name}</div>
-                    <div className="text-xs text-slate-400">{prof.classes}</div>
-                    <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
-                      Faixa {prof.beltId} • {prof.degrees}º Grau
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newProfName.trim()) return;
-                saveProfessor({
-                  id: 'prof-' + Date.now(),
-                  name: newProfName.trim(),
-                  beltId: newProfBelt,
-                  degrees: Number(newProfDegrees),
-                  classes: newProfClasses,
-                  photo: ''
-                });
-                setNewProfName('');
-              }}
-              className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3"
-            >
-              <h3 className="font-bold text-sm">Cadastrar Novo Professor</h3>
-              <input
-                type="text"
-                placeholder="Nome (Ex.: Prof. Matheus)"
-                value={newProfName}
-                onChange={(e) => setNewProfName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={newProfBelt}
-                  onChange={(e) => setNewProfBelt(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-                >
-                  {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  max={6}
-                  placeholder="Graus"
-                  value={newProfDegrees}
-                  onChange={(e) => setNewProfDegrees(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-                />
-              </div>
-              <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">
-                Adicionar Professor
-              </button>
-            </form>
           </div>
         )}
 
