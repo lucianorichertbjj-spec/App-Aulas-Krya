@@ -1356,7 +1356,7 @@ export default function App() {
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs"
                     />
                     <p className="text-[11px] text-slate-400">
-                      O pedido será analisado e aprovado pela administração da Krya BJJ.
+                      O pedido será analisado e aprovado pela administração da Krya BJJ antes de liberar o Pix.
                     </p>
                   </div>
                 )}
@@ -1755,7 +1755,7 @@ export default function App() {
               </div>
             )}
 
-            {!fin.isDependent && fin.paymentStatus === 'Pendente' && (
+            {!fin.isDependent && fin.paymentStatus === 'Pendente' && st.familyRequest?.status !== 'pending' && (
               <button
                 onClick={() => {
                   setCopiedPix(false);
@@ -1765,6 +1765,12 @@ export default function App() {
               >
                 <QrCode className="w-4 h-4" /> Aperte aqui para fazer o pagamento
               </button>
+            )}
+
+            {!fin.isDependent && fin.paymentStatus === 'Pendente' && st.familyRequest?.status === 'pending' && (
+              <div className="w-full py-3 px-4 rounded-xl bg-slate-800/80 border border-amber-500/30 text-amber-300 text-xs font-semibold text-center">
+                Pagamento Pix temporariamente travado — aguardando aprovação do Plano Familiar pela Krya BJJ.
+              </div>
             )}
 
             {/* SOLICITAÇÃO DE PLANO FAMILIAR PARA ALUNO INDIVIDUAL */}
@@ -1836,7 +1842,7 @@ export default function App() {
             >
               <h3 className="font-bold text-base text-amber-400">Solicitar Plano Familiar</h3>
               <p className="text-xs text-slate-400">
-                Escolha o combo e informe os nomes dos familiares. A administração da Krya BJJ fará a aprovação e o vínculo.
+                Escolha o combo e informe os nomes dos familiares. A administração da Krya BJJ fará a aprovação e o vínculo antes de liberar o Pix.
               </p>
               <select
                 value={reqFamilyPlanId}
