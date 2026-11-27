@@ -15,6 +15,42 @@ const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================================
+// PLANOS FAMILIARES KRYA BJJ
+// =========================================================================
+const FAMILY_PLANS = [
+  { id: '1a_1k', name: '1 Adulto + 1 Kids (2 pessoas)', fee: 350 },
+  { id: '2a', name: '2 Adultos (2 pessoas)', fee: 360 },
+  { id: '3p', name: 'Plano Familiar (3 pessoas)', fee: 500 },
+  { id: '2a_2k', name: '2 Adultos + 2 Kids (4 pessoas)', fee: 650 },
+];
+
+function getFamilyPlanById(planId) {
+  return FAMILY_PLANS.find(p => p.id === planId) || null;
+}
+
+function getEffectiveFinancialState(student, allStudents, toleranceDays = 3) {
+  const isDependent = student.familyRole === 'dependente' && Boolean(student.familyTitularId);
+  const titular = isDependent
+    ? allStudents.find(s => s.id === student.familyTitularId)
+    : student;
+  const ref = titular || student;
+  const todayDay = new Date().getDate();
+  const dueLimit = Number(ref.dueDay || 5) + Number(toleranceDays || 0);
+  const isOverdue = ref.paymentStatus === 'Pendente' && todayDay > dueLimit;
+  const isBlocked = ref.status === 'Inativo' || isOverdue;
+
+  return {
+    isDependent,
+    titular: ref,
+    paymentStatus: ref.paymentStatus,
+    dueDay: ref.dueDay,
+    fee: isDependent ? 0 : ref.fee,
+    isBlocked,
+    isOverdue
+  };
+}
+
+// =========================================================================
 // GERADOR OFICIAL DE PIX COPIA E COLA (PADRÃO EMV / BANCO CENTRAL + CRC16)
 // =========================================================================
 function crc16CCITT(str) {
@@ -165,7 +201,9 @@ function buildCredentialsWhatsAppLink(phone, name, code, password) {
 
 function buildReceiptWhatsAppLink(academyPhone, student) {
   const digits = (academyPhone || '51995667443').replace(/\D/g, '');
-  const msg = `Olá Krya BJJ! Segue o comprovante do pagamento Pix da mensalidade:\n\nAluno: ${student.name}\nCódigo: ${student.code}\nValor: R$ ${student.fee},00`;
+  const plan = student.familyRole === 'titular' ? getFamilyPlanById(student.familyPlanId) : null;
+  const planLine = plan ? `\nPlano Familiar: ${plan.name}` : '';
+  const msg = `Olá Krya BJJ! Segue o comprovante do pagamento Pix da mensalidade:\n\nAluno: ${student.name}\nCódigo: ${student.code}${planLine}\nValor: R$ ${student.fee},00`;
   return `https://wa.me/55${digits}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -299,6 +337,10 @@ const INITIAL_STUDENTS = [
     paymentStatus: 'Em dia',
     lastPaymentMethod: 'Pix',
     status: 'Ativo',
+    familyRole: 'individual',
+    familyPlanId: '',
+    familyTitularId: '',
+    familyRequest: null,
     photo: ''
   },
   {
@@ -323,6 +365,10 @@ const INITIAL_STUDENTS = [
     paymentStatus: 'Pendente',
     lastPaymentMethod: '',
     status: 'Ativo',
+    familyRole: 'individual',
+    familyPlanId: '',
+    familyTitularId: '',
+    familyRequest: null,
     photo: ''
   },
   {
@@ -347,6 +393,10 @@ const INITIAL_STUDENTS = [
     paymentStatus: 'Em dia',
     lastPaymentMethod: 'Cartão Crédito',
     status: 'Ativo',
+    familyRole: 'individual',
+    familyPlanId: '',
+    familyTitularId: '',
+    familyRequest: null,
     photo: ''
   },
   {
@@ -371,6 +421,10 @@ const INITIAL_STUDENTS = [
     paymentStatus: 'Pendente',
     lastPaymentMethod: '',
     status: 'Ativo',
+    familyRole: 'individual',
+    familyPlanId: '',
+    familyTitularId: '',
+    familyRequest: null,
     photo: ''
   }
 ];
@@ -397,6 +451,7 @@ const INITIAL_CONFIG = {
   profPass: 'prof',
   kidsFee: 185,
   adultFee: 200,
+  dueToleranceDays: 3,
   pixKey: '5a8175ab-ae1e-4866-918e-6842e331bbc0',
   pixBeneficiary: 'CRISTIANE M G NASCIMENT',
   pixFullName: 'Cristiane Maizonetti Guimarães Nascimento',
@@ -447,7 +502,7 @@ export default function App() {
   });
   const [pendingCheckins, setPendingCheckins] = useState([]);
 
-  // SESSÃO PERSISTENTE (NÃO DESLOGA AO ATUALIZAR A PÁGINA)
+  // SESSÃO PERSISTENTE
   const [role, setRole] = useState(() => {
     const saved = localStorage.getItem('krya_role_v1');
     return saved && saved !== 'complete_prereg' ? saved : null;
@@ -463,7 +518,7 @@ export default function App() {
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [search, setSearch] = useState('');
 
-  // ESTADOS DE RECUPERAÇÃO DE SENHA ("ESQUECI MINHA SENHA")
+  // ESTADOS DE RECUPERAÇÃO DE SENHA
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotError, setForgotError] = useState('');
@@ -490,6 +545,14 @@ export default function App() {
   const [compNumber, setCompNumber] = useState('');
   const [compDueDay, setCompDueDay] = useState(5);
   const [compPhoto, setCompPhoto] = useState('');
+  const [compWantFamily, setCompWantFamily] = useState(false);
+  const [compFamilyPlanId, setCompFamilyPlanId] = useState('1a_1k');
+  const [compFamilyMembers, setCompFamilyMembers] = useState('');
+
+  // MODAL DE SOLICITAÇÃO DE PLANO FAMILIAR (NO PAINEL DO ALUNO)
+  const [showFamilyReqModal, setShowFamilyReqModal] = useState(false);
+  const [reqFamilyPlanId, setReqFamilyPlanId] = useState('1a_1k');
+  const [reqFamilyMembers, setReqFamilyMembers] = useState('');
 
   const [showPassModal, setShowPassModal] = useState(false);
   const [newStudentPass, setNewStudentPass] = useState('');
@@ -539,7 +602,6 @@ export default function App() {
     }
   }, [loggedStudentId]);
 
-  // PRÉ-PREENCHE OS CAMPOS DA FICHA QUANDO O PRÉ-CADASTRO CARREGA
   useEffect(() => {
     if (role === 'complete_prereg' && activePreRegToken) {
       const pr = preRegs.find(p => p.token === activePreRegToken);
@@ -569,6 +631,7 @@ export default function App() {
       setShowPassModal(false);
       setShowPixModal(false);
       setShowForgotModal(false);
+      setShowFamilyReqModal(false);
       setManualPayStudent(null);
       setEditingStudent(null);
       setEditingProf(null);
@@ -835,6 +898,10 @@ export default function App() {
       paymentStatus: 'Pendente',
       lastPaymentMethod: '',
       status: 'Ativo',
+      familyRole: 'individual',
+      familyPlanId: '',
+      familyTitularId: '',
+      familyRequest: null,
       photo: ''
     };
 
@@ -973,6 +1040,12 @@ export default function App() {
         paymentStatus: 'Pendente',
         lastPaymentMethod: '',
         status: 'Ativo',
+        familyRole: 'individual',
+        familyPlanId: '',
+        familyTitularId: '',
+        familyRequest: compWantFamily
+          ? { planId: compFamilyPlanId, membersText: compFamilyMembers.trim(), status: 'pending' }
+          : null,
         photo: compPhoto
       };
 
@@ -1174,7 +1247,7 @@ export default function App() {
                 />
                 <div className="mt-1.5 flex justify-between text-xs bg-slate-800/70 px-3 py-1.5 rounded-lg">
                   <span className="text-amber-300 font-medium">{previewCat}</span>
-                  <span className="text-emerald-400 font-bold">Mensalidade: R$ {previewFee},00</span>
+                  <span className="text-emerald-400 font-bold">Individual: R$ {previewFee},00</span>
                 </div>
               </div>
 
@@ -1247,6 +1320,46 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* OPÇÃO DE SOLICITAR PLANO FAMILIAR */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2.5">
+                <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={compWantFamily}
+                    onChange={(e) => setCompWantFamily(e.target.checked)}
+                    className="rounded accent-amber-500"
+                  />
+                  Quero solicitar Plano Familiar (2 a 4 pessoas)
+                </label>
+
+                {compWantFamily && (
+                  <div className="space-y-2 pt-1">
+                    <select
+                      value={compFamilyPlanId}
+                      onChange={(e) => setCompFamilyPlanId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs"
+                    >
+                      {FAMILY_PLANS.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — R$ {p.fee},00
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      required={compWantFamily}
+                      placeholder="Nome dos familiares que treinam juntos"
+                      value={compFamilyMembers}
+                      onChange={(e) => setCompFamilyMembers(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs"
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      O pedido será analisado e aprovado pela administração da Krya BJJ.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <button
@@ -1442,6 +1555,7 @@ export default function App() {
       );
     }
 
+    const fin = getEffectiveFinancialState(st, students, config.dueToleranceDays);
     const isAdult = st.category === 'Adultos (16+)';
     const targetClasses = isAdult
       ? getAdultClassesPerDegree(st.beltId)
@@ -1453,6 +1567,9 @@ export default function App() {
       : (KIDS_BELTS.find(b => b.id === st.beltId)?.name || 'Branca');
     const alreadyCheckedIn = pendingCheckins.includes(st.id);
 
+    const familyPlan = st.familyRole === 'titular' ? getFamilyPlanById(st.familyPlanId) : null;
+    const isAwaitingApproval = fin.paymentStatus === 'Aguardando aprovação';
+
     const pixPayload = generatePixPayload({
       key: config.pixKey,
       name: config.pixBeneficiary,
@@ -1460,8 +1577,6 @@ export default function App() {
       amount: st.fee,
       txid: st.code
     });
-
-    const isAwaitingApproval = st.paymentStatus === 'Aguardando aprovação';
 
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
@@ -1488,6 +1603,18 @@ export default function App() {
         </div>
 
         <div className="max-w-md mx-auto p-4 space-y-4">
+          {fin.isBlocked && (
+            <div className="bg-red-950/70 border border-red-600/60 rounded-2xl p-3.5 flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-red-200 leading-relaxed">
+                <strong className="text-red-300 block">Acesso temporariamente suspenso</strong>
+                {fin.isDependent
+                  ? `A mensalidade do Plano Familiar (Titular: ${fin.titular.name}) está pendente. Assim que o pagamento for aprovado pela Krya BJJ, sua conta será liberada automaticamente.`
+                  : 'Sua mensalidade está pendente após o vencimento. Realize o pagamento via Pix abaixo para liberar o check-in.'}
+              </div>
+            </div>
+          )}
+
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 text-center shadow-xl">
             <div className="relative w-28 h-28 mx-auto mb-3">
               {st.photo ? (
@@ -1559,37 +1686,54 @@ export default function App() {
           </div>
 
           <button
-            disabled={alreadyCheckedIn}
+            disabled={alreadyCheckedIn || fin.isBlocked}
             onClick={() => setPendingCheckins(prev => [...prev, st.id])}
             className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition ${
-              alreadyCheckedIn
+              fin.isBlocked
+                ? 'bg-red-950/60 text-red-300 border border-red-800/60 cursor-not-allowed'
+                : alreadyCheckedIn
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                 : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg'
             }`}
           >
             <CheckCircle2 className="w-5 h-5" />
-            {alreadyCheckedIn ? 'Presença Enviada (Aguardando Professor)' : 'Registrar Presença no Treino de Hoje'}
+            {fin.isBlocked
+              ? 'Check-in Bloqueado (Pendência Financeira)'
+              : alreadyCheckedIn
+              ? 'Presença Enviada (Aguardando Professor)'
+              : 'Registrar Presença no Treino de Hoje'}
           </button>
 
-          {/* CARD DE MENSALIDADE E PAGAMENTO PIX */}
+          {/* CARD DE MENSALIDADE, PLANO FAMILIAR E PAGAMENTO PIX */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-xs text-slate-400">Mensalidade • Vencimento Dia {st.dueDay}</div>
-                <div className="text-lg font-black text-white">R$ {st.fee},00</div>
+                <div className="text-xs text-slate-400">
+                  {fin.isDependent
+                    ? `Plano Familiar • Dependente de ${fin.titular.name}`
+                    : familyPlan
+                    ? `Plano Familiar (Titular) • Venc. Dia ${st.dueDay}`
+                    : `Mensalidade • Vencimento Dia ${st.dueDay}`}
+                </div>
+                <div className="text-lg font-black text-white">
+                  {fin.isDependent ? 'R$ 0,00 (Incluso no Plano)' : `R$ ${st.fee},00`}
+                </div>
+                {familyPlan && (
+                  <div className="text-[11px] text-amber-300 font-semibold">{familyPlan.name}</div>
+                )}
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-bold text-center ${
-                st.paymentStatus === 'Em dia'
+                fin.paymentStatus === 'Em dia'
                   ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                   : isAwaitingApproval
                   ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
                   : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
               }`}>
-                {isAwaitingApproval ? 'Aguardando aprovação da Krya BJJ' : st.paymentStatus}
+                {isAwaitingApproval ? 'Aguardando aprovação da Krya BJJ' : fin.paymentStatus}
               </span>
             </div>
 
-            {isAwaitingApproval && (
+            {!fin.isDependent && isAwaitingApproval && (
               <div className="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-3 space-y-2.5">
                 <p className="text-xs text-blue-200 leading-relaxed">
                   Seu pagamento está <strong>aguardando aprovação do administrador da Krya BJJ</strong>. Envie o comprovante no WhatsApp para agilizar a liberação:
@@ -1611,7 +1755,7 @@ export default function App() {
               </div>
             )}
 
-            {st.paymentStatus === 'Pendente' && (
+            {!fin.isDependent && fin.paymentStatus === 'Pendente' && (
               <button
                 onClick={() => {
                   setCopiedPix(false);
@@ -1621,6 +1765,26 @@ export default function App() {
               >
                 <QrCode className="w-4 h-4" /> Aperte aqui para fazer o pagamento
               </button>
+            )}
+
+            {/* SOLICITAÇÃO DE PLANO FAMILIAR PARA ALUNO INDIVIDUAL */}
+            {(!st.familyRole || st.familyRole === 'individual') && (
+              st.familyRequest?.status === 'pending' ? (
+                <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 text-center">
+                  Solicitação de <strong>{getFamilyPlanById(st.familyRequest.planId)?.name}</strong> em análise pela Krya BJJ.
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setReqFamilyPlanId('1a_1k');
+                    setReqFamilyMembers('');
+                    setShowFamilyReqModal(true);
+                  }}
+                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold transition"
+                >
+                  Solicitar Plano Familiar (2 a 4 pessoas)
+                </button>
+              )
             )}
           </div>
 
@@ -1651,6 +1815,66 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* MODAL DE SOLICITAÇÃO DE PLANO FAMILIAR */}
+        {showFamilyReqModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await saveStudent({
+                  ...st,
+                  familyRequest: {
+                    planId: reqFamilyPlanId,
+                    membersText: reqFamilyMembers.trim(),
+                    status: 'pending'
+                  }
+                });
+                setShowFamilyReqModal(false);
+              }}
+              className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3"
+            >
+              <h3 className="font-bold text-base text-amber-400">Solicitar Plano Familiar</h3>
+              <p className="text-xs text-slate-400">
+                Escolha o combo e informe os nomes dos familiares. A administração da Krya BJJ fará a aprovação e o vínculo.
+              </p>
+              <select
+                value={reqFamilyPlanId}
+                onChange={(e) => setReqFamilyPlanId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm"
+              >
+                {FAMILY_PLANS.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — R$ {p.fee},00
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                required
+                placeholder="Nomes dos familiares (Ex.: Maria e Pedro)"
+                value={reqFamilyMembers}
+                onChange={(e) => setReqFamilyMembers(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowFamilyReqModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-xs font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold"
+                >
+                  Enviar Solicitação
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* MODAL DE PAGAMENTO PIX */}
         {showPixModal && (
@@ -1897,11 +2121,20 @@ export default function App() {
   // PAINEL MASTER & ADMINISTRADOR
   // =========================================================================
   const isMaster = role === 'master';
-  const totalRevenue = students.filter(s => s.paymentStatus === 'Em dia').reduce((acc, s) => acc + s.fee, 0);
-  const pendingRevenue = students.filter(s => s.paymentStatus !== 'Em dia').reduce((acc, s) => acc + s.fee, 0);
-  const awaitingApprovalCount = students.filter(s => s.paymentStatus === 'Aguardando aprovação').length;
+  const totalRevenue = students
+    .filter(s => s.familyRole !== 'dependente' && s.paymentStatus === 'Em dia')
+    .reduce((acc, s) => acc + Number(s.fee || 0), 0);
+  const pendingRevenue = students
+    .filter(s => s.familyRole !== 'dependente' && s.paymentStatus !== 'Em dia')
+    .reduce((acc, s) => acc + Number(s.fee || 0), 0);
+  const awaitingApprovalCount = students.filter(
+    s => s.familyRole !== 'dependente' && s.paymentStatus === 'Aguardando aprovação'
+  ).length;
+  const familyRequests = students.filter(s => s.familyRequest?.status === 'pending');
 
   const sortedFinancialStudents = [...students].sort((a, b) => {
+    if (a.familyRole === 'dependente' && b.familyRole !== 'dependente') return 1;
+    if (b.familyRole === 'dependente' && a.familyRole !== 'dependente') return -1;
     const order = { 'Aguardando aprovação': 0, 'Pendente': 1, 'Em dia': 2 };
     return (order[a.paymentStatus] ?? 1) - (order[b.paymentStatus] ?? 1);
   });
@@ -1946,6 +2179,7 @@ export default function App() {
   ];
 
   const currentFolderObj = folderDefinitions.find(f => f.id === selectedFolder);
+  const financeBadgeCount = awaitingApprovalCount + familyRequests.length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
@@ -1982,7 +2216,7 @@ export default function App() {
             { id: 'precadastro', label: `Pré-Cadastros (${preRegs.filter(p => !p.used).length})`, icon: LinkIconFallback },
             {
               id: 'financeiro',
-              label: awaitingApprovalCount > 0 ? `Financeiro (${awaitingApprovalCount} p/ aprovar)` : 'Financeiro & Baixas',
+              label: financeBadgeCount > 0 ? `Financeiro (${financeBadgeCount} p/ aprovar)` : 'Financeiro & Baixas',
               icon: DollarSign
             },
             ...(isMaster ? [
@@ -2192,6 +2426,7 @@ export default function App() {
                       .map(st => {
                         const isAdult = st.category === 'Adultos (16+)';
                         const target = isAdult ? getAdultClassesPerDegree(st.beltId) : getKidsClassesPerDegree(st.age, st.beltId);
+                        const fin = getEffectiveFinancialState(st, students, config.dueToleranceDays);
                         return (
                           <div
                             key={st.id}
@@ -2214,11 +2449,24 @@ export default function App() {
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm text-white truncate">{st.name}</div>
+                                <div className="font-bold text-sm text-white truncate flex items-center gap-1.5">
+                                  <span className="truncate">{st.name}</span>
+                                  {fin.isBlocked && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 shrink-0">
+                                      Inativo
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="text-[11px] text-slate-400 font-mono">
                                   Login: {st.code} • Senha: {st.password}
                                 </div>
-                                <div className="text-[11px] text-amber-300">{st.category} • Venc. dia {st.dueDay}</div>
+                                <div className="text-[11px] text-amber-300">
+                                  {st.familyRole === 'titular'
+                                    ? 'Plano Familiar (Titular)'
+                                    : st.familyRole === 'dependente'
+                                    ? `Dependente de ${fin.titular.name}`
+                                    : `${st.category} • Venc. dia ${st.dueDay}`}
+                                </div>
                               </div>
                               {isMaster && (
                                 <button
@@ -2440,9 +2688,71 @@ export default function App() {
               </div>
             </div>
 
+            {/* SOLICITAÇÕES DE PLANO FAMILIAR PENDENTES */}
+            {familyRequests.length > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-4 space-y-3">
+                <div className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                  Solicitações de Plano Familiar ({familyRequests.length})
+                </div>
+                {familyRequests.map(st => {
+                  const reqPlan = getFamilyPlanById(st.familyRequest?.planId);
+                  return (
+                    <div key={st.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                      <div>
+                        <div className="font-bold text-sm text-white">{st.name}</div>
+                        <div className="text-xs text-amber-300">
+                          Combo: {reqPlan?.name} — R$ {reqPlan?.fee},00
+                        </div>
+                        {st.familyRequest?.membersText && (
+                          <div className="text-xs text-slate-400">
+                            Familiares informados: {st.familyRequest.membersText}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => saveStudent({
+                            ...st,
+                            familyRole: 'titular',
+                            familyPlanId: reqPlan?.id || '1a_1k',
+                            familyTitularId: '',
+                            fee: reqPlan?.fee || st.fee,
+                            familyRequest: null
+                          })}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 text-xs font-bold"
+                        >
+                          Aprovar como Titular (R$ {reqPlan?.fee})
+                        </button>
+                        {isMaster && (
+                          <button
+                            onClick={() => {
+                              setEditingStudent({ ...st, familyRole: 'dependente', fee: 0, familyRequest: null });
+                              setConfirmDelete(false);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 text-amber-300 text-xs font-bold"
+                          >
+                            Vincular como Dependente
+                          </button>
+                        )}
+                        <button
+                          onClick={() => saveStudent({ ...st, familyRequest: null })}
+                          className="px-3 py-1.5 rounded-lg bg-red-950/60 text-red-300 text-xs font-bold"
+                        >
+                          Recusar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="space-y-2.5">
               {sortedFinancialStudents.map(st => {
-                const isWaiting = st.paymentStatus === 'Aguardando aprovação';
+                const fin = getEffectiveFinancialState(st, students, config.dueToleranceDays);
+                const isWaiting = !fin.isDependent && st.paymentStatus === 'Aguardando aprovação';
+                const plan = st.familyRole === 'titular' ? getFamilyPlanById(st.familyPlanId) : null;
+
                 return (
                   <div
                     key={st.id}
@@ -2455,17 +2765,43 @@ export default function App() {
                     <div>
                       <div className="font-bold text-sm text-white flex items-center gap-2 flex-wrap">
                         {st.name}
+                        {st.familyRole === 'titular' && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                            Titular Família
+                          </span>
+                        )}
+                        {fin.isDependent && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-bold">
+                            Dependente de {fin.titular.name}
+                          </span>
+                        )}
                         {isWaiting && (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold">
                             Aguardando aprovação
                           </span>
                         )}
+                        {fin.isBlocked && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-bold">
+                            Inativo
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-400">
-                        R$ {st.fee},00 • Venc. dia {st.dueDay} {st.lastPaymentMethod ? `• Pago via ${st.lastPaymentMethod}` : ''}
+                        {fin.isDependent
+                          ? `R$ 0,00 • Espelha o status de ${fin.titular.name}`
+                          : `R$ ${st.fee},00 ${plan ? `(${plan.name})` : ''} • Venc. dia ${st.dueDay} ${st.lastPaymentMethod ? `• Pago via ${st.lastPaymentMethod}` : ''}`}
                       </div>
                     </div>
-                    {st.paymentStatus === 'Em dia' ? (
+
+                    {fin.isDependent ? (
+                      <span className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${
+                        fin.paymentStatus === 'Em dia'
+                          ? 'bg-emerald-500/15 text-emerald-400'
+                          : 'bg-amber-500/15 text-amber-300'
+                      }`}>
+                        {fin.paymentStatus === 'Em dia' ? 'Liberado ✓' : fin.paymentStatus}
+                      </span>
+                    ) : st.paymentStatus === 'Em dia' ? (
                       <button
                         onClick={() => saveStudent({ ...st, paymentStatus: 'Pendente', lastPaymentMethod: '' })}
                         className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold shrink-0"
@@ -2474,7 +2810,7 @@ export default function App() {
                       </button>
                     ) : isWaiting ? (
                       <button
-                        onClick={() => saveStudent({ ...st, paymentStatus: 'Em dia', lastPaymentMethod: 'Pix' })}
+                        onClick={() => saveStudent({ ...st, paymentStatus: 'Em dia', status: 'Ativo', lastPaymentMethod: 'Pix' })}
                         className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shrink-0"
                       >
                         Aprovar Pagamento
@@ -2496,7 +2832,7 @@ export default function App() {
 
         {activeTab === 'config' && isMaster && (
           <div className="mt-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h3 className="font-bold text-sm text-amber-400">Senhas de Acesso, Pix & WhatsApp</h3>
+            <h3 className="font-bold text-sm text-amber-400">Senhas de Acesso, Pix, WhatsApp & Tolerância</h3>
             <div className="grid sm:grid-cols-3 gap-3 text-xs">
               <div>
                 <label className="text-slate-400 block mb-1">Senha Master (Dono)</label>
@@ -2526,7 +2862,7 @@ export default function App() {
                 />
               </div>
             </div>
-            <div className="grid sm:grid-cols-3 gap-3 text-xs pt-2">
+            <div className="grid sm:grid-cols-2 gap-3 text-xs pt-2">
               <div>
                 <label className="text-slate-400 block mb-1">Chave Pix da Academia</label>
                 <input
@@ -2552,6 +2888,17 @@ export default function App() {
                   value={config.whatsappNumber || ''}
                   onChange={(e) => setConfig({ ...config, whatsappNumber: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Tolerância após vencimento (dias p/ inativar)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={15}
+                  value={config.dueToleranceDays ?? 3}
+                  onChange={(e) => setConfig({ ...config, dueToleranceDays: Number(e.target.value) })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -2694,7 +3041,7 @@ export default function App() {
                 degrees: Number(editingStudent.degrees) || 0,
                 classesInCurrentDegree: Number(editingStudent.classesInCurrentDegree) || 0,
                 monthsInBelt: Number(editingStudent.monthsInBelt) || 0,
-                fee: Number(editingStudent.fee) || 0,
+                fee: editingStudent.familyRole === 'dependente' ? 0 : (Number(editingStudent.fee) || 0),
                 dueDay: Number(editingStudent.dueDay) || 5
               });
               setEditingStudent(null);
@@ -2748,6 +3095,96 @@ export default function App() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
                   />
                 </div>
+              </div>
+
+              {/* CONFIGURAÇÃO DE PLANO FAMILIAR */}
+              <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                <div className="font-bold text-amber-400">Plano Familiar & Vínculo</div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Tipo de Plano</label>
+                  <select
+                    value={editingStudent.familyRole || 'individual'}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      if (nextRole === 'dependente') {
+                        setEditingStudent({
+                          ...editingStudent,
+                          familyRole: 'dependente',
+                          familyPlanId: '',
+                          fee: 0
+                        });
+                      } else if (nextRole === 'titular') {
+                        const firstPlan = FAMILY_PLANS[0];
+                        setEditingStudent({
+                          ...editingStudent,
+                          familyRole: 'titular',
+                          familyPlanId: editingStudent.familyPlanId || firstPlan.id,
+                          familyTitularId: '',
+                          fee: getFamilyPlanById(editingStudent.familyPlanId)?.fee || firstPlan.fee
+                        });
+                      } else {
+                        const baseFee = editingStudent.category === 'Adultos (16+)' ? config.adultFee : config.kidsFee;
+                        setEditingStudent({
+                          ...editingStudent,
+                          familyRole: 'individual',
+                          familyPlanId: '',
+                          familyTitularId: '',
+                          fee: baseFee
+                        });
+                      }
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm"
+                  >
+                    <option value="individual">Individual</option>
+                    <option value="titular">Titular (Líder do Plano Familiar)</option>
+                    <option value="dependente">Dependente (R$ 0,00 — Vinculado ao Titular)</option>
+                  </select>
+                </div>
+
+                {editingStudent.familyRole === 'titular' && (
+                  <div>
+                    <label className="text-slate-400 block mb-1">Combo Familiar</label>
+                    <select
+                      value={editingStudent.familyPlanId || '1a_1k'}
+                      onChange={(e) => {
+                        const plan = getFamilyPlanById(e.target.value);
+                        setEditingStudent({
+                          ...editingStudent,
+                          familyPlanId: e.target.value,
+                          fee: plan ? plan.fee : editingStudent.fee
+                        });
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm"
+                    >
+                      {FAMILY_PLANS.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — R$ {p.fee},00
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {editingStudent.familyRole === 'dependente' && (
+                  <div>
+                    <label className="text-slate-400 block mb-1">Titular Responsável pelo Pagamento</label>
+                    <select
+                      required
+                      value={editingStudent.familyTitularId || ''}
+                      onChange={(e) => setEditingStudent({ ...editingStudent, familyTitularId: e.target.value, fee: 0 })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm"
+                    >
+                      <option value="">Selecione o Titular...</option>
+                      {students
+                        .filter(s => s.id !== editingStudent.id && s.familyRole !== 'dependente')
+                        .map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.code})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -2843,14 +3280,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-slate-400 block mb-1">Mensalidade (R$)</label>
                   <input
                     type="number"
-                    value={editingStudent.fee}
+                    disabled={editingStudent.familyRole === 'dependente'}
+                    value={editingStudent.familyRole === 'dependente' ? 0 : editingStudent.fee}
                     onChange={(e) => setEditingStudent({ ...editingStudent, fee: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm disabled:opacity-50"
                   />
                 </div>
                 <div>
@@ -2864,6 +3302,9 @@ export default function App() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-slate-400 block mb-1">Pagamento</label>
                   <select
@@ -2874,6 +3315,17 @@ export default function App() {
                     <option value="Em dia">Em dia</option>
                     <option value="Aguardando aprovação">Aguardando aprovação</option>
                     <option value="Pendente">Pendente</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Status da Conta</label>
+                  <select
+                    value={editingStudent.status || 'Ativo'}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, status: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm"
+                  >
+                    <option value="Ativo">Ativo</option>
+                    <option value="Inativo">Inativo (Bloqueado)</option>
                   </select>
                 </div>
               </div>
@@ -3121,7 +3573,7 @@ export default function App() {
                 <button
                   key={method}
                   onClick={() => {
-                    saveStudent({ ...manualPayStudent, paymentStatus: 'Em dia', lastPaymentMethod: method });
+                    saveStudent({ ...manualPayStudent, paymentStatus: 'Em dia', status: 'Ativo', lastPaymentMethod: method });
                     setManualPayStudent(null);
                   }}
                   className="w-full py-2.5 px-3 rounded-xl bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/50 text-left text-xs font-bold flex items-center justify-between"
