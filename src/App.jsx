@@ -10,7 +10,7 @@ import {
 // CONEXÃO DIRETA COM O SUPABASE
 // =========================================================================
 const SUPABASE_URL = 'https://rihcrmjdryqjyuxqdapk.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpaGNybWpkcnlxanl1cXhkYXBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3NDQ2NTksImV4cCI6MjExMTMyMDY1OX0.Y2b5fwt36jveb95FaoVvXxwHtFYd07RlKfLcfRjX20g';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -333,6 +333,7 @@ function extractRecord(row) {
 
 export default function App() {
   const [cloudConnected, setCloudConnected] = useState(false);
+  const [cloudStatusMsg, setCloudStatusMsg] = useState('Sincronizando com Supabase...');
   const [loadingCloud, setLoadingCloud] = useState(true);
 
   const [students, setStudents] = useState(() => {
@@ -420,16 +421,20 @@ export default function App() {
           supabase.from('krya_preregs').select('*')
         ]);
 
-        if (!stRes.error && !prRes.error && !preRes.error) {
+        const firstError = stRes.error || prRes.error || preRes.error;
+        if (!firstError) {
           setCloudConnected(true);
+          setCloudStatusMsg('Conectado ao Supabase Nuvem');
           if (stRes.data?.length) setStudents(stRes.data.map(extractRecord));
           if (prRes.data?.length) setProfessors(prRes.data.map(extractRecord));
           if (preRes.data?.length) setPreRegs(preRes.data.map(extractRecord));
         } else {
-          console.error('Erro Supabase SELECT:', stRes.error || prRes.error || preRes.error);
+          console.error('Erro Supabase SELECT:', firstError);
+          setCloudStatusMsg(`Offline (${firstError.message || 'Erro de permissão/tabela'})`);
         }
       } catch (err) {
         console.error('Erro ao conectar Supabase:', err);
+        setCloudStatusMsg('Offline (Falha de rede)');
       } finally {
         setLoadingCloud(false);
       }
@@ -866,7 +871,7 @@ export default function App() {
               cloudConnected ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
             }`}>
               <span className={`w-1.5 h-1.5 rounded-full ${cloudConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              {cloudConnected ? 'Conectado ao Supabase Nuvem' : 'Sincronizando com Supabase...'}
+              {cloudStatusMsg}
             </span>
           </div>
 
