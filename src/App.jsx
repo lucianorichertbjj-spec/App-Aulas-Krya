@@ -9,7 +9,7 @@ import {
 // =========================================================================
 // CONEXÃO DIRETA COM O SUPABASE
 // =========================================================================
-const SUPABASE_URL = 'https://rihcrmjdryqjyuxqdapk.supabase.co';
+const SUPABASE_URL = 'https://rihcrmjdryqjyuqxdapk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -418,7 +418,7 @@ export default function App() {
         const [stRes, prRes, preRes] = await Promise.all([
           supabase.from('krya_students').select('*'),
           supabase.from('krya_professors').select('*'),
-          supabase.from('krya_preregs').select('*')
+          supabase.from('Krya_preregs').select('*')
         ]);
 
         const firstError = stRes.error || prRes.error || preRes.error;
@@ -462,7 +462,7 @@ export default function App() {
           });
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'krya_preregs' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'Krya_preregs' }, (payload) => {
         const rec = extractRecord(payload.new);
         if (rec?.token) {
           setPreRegs(prev => {
@@ -492,7 +492,7 @@ export default function App() {
       if (supabase) {
         setLoadingCloud(true);
         supabase
-          .from('krya_preregs')
+          .from('Krya_preregs')
           .select('*')
           .eq('token', cleanToken)
           .maybeSingle()
@@ -542,7 +542,7 @@ export default function App() {
       return exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
     });
     if (supabase) {
-      const { error } = await supabase.from('krya_preregs').upsert({
+      const { error } = await supabase.from('Krya_preregs').upsert({
         token: pr.token,
         name: pr.name,
         phone: pr.phone,
@@ -550,7 +550,7 @@ export default function App() {
         used: pr.used
       });
       if (error) {
-        const { error: jsonError } = await supabase.from('krya_preregs').upsert({ token: pr.token, data: pr });
+        const { error: jsonError } = await supabase.from('Krya_preregs').upsert({ token: pr.token, data: pr });
         if (jsonError) {
           alert('Erro ao salvar pré-cadastro na nuvem: ' + jsonError.message);
         }
