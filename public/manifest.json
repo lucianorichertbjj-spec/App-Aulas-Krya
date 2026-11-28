@@ -1,20 +1,22 @@
 {
-  "name": "Krya BJJ — Gestão & Portal",
+  "name": "Krya BJJ",
   "short_name": "Krya BJJ",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
-  "theme_color": "#0f172a",
+  "theme_color": "#020617",
   "icons": [
     {
-      "src": "https://placehold.co/192x192/0f172a/f59e0b.png?text=KRYA",
+      "src": "/logo-krya.jpg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     },
     {
-      "src": "https://placehold.co/512x512/0f172a/f59e0b.png?text=KRYA+BJJ",
+      "src": "/logo-krya.jpg",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     }
   ]
 }
