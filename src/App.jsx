@@ -1112,7 +1112,11 @@ export default function App() {
     [students, loggedStudentId]
   );
 
-  const visiblePreRegs = useMemo(() => dedupePreRegs(preRegs), [preRegs]);
+  // SOMENTE PRÉ-CADASTROS PENDENTES (SAI AUTOMATICAMENTE QUANDO COMPLETA O CADASTRO)
+  const pendingPreRegs = useMemo(
+    () => dedupePreRegs(preRegs).filter(p => !p.used),
+    [preRegs]
+  );
 
   // =========================================================================
   // TELA DE FICHA CADASTRAL DO ALUNO (LINK DE PRÉ-CADASTRO)
@@ -2258,7 +2262,8 @@ export default function App() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
             { id: 'alunos', label: `Turmas & Equipe (${students.length + professors.length})`, icon: Users },
-            { id: 'precadastro', label: `Pré-Cadastros (${visiblePreRegs.filter(p => !p.used).length})`, icon: LinkIconFallback },
+            { id: 'precadastro', label: `Alunos Pré-Cadastrados (${pendingPreRegs.length})`, icon: LinkIconFallback },
+            { id: 'cadastrados', label: `Alunos Cadastrados (${students.length})`, icon: CheckCircle2 },
             {
               id: 'financeiro',
               label: financeBadgeCount > 0 ? `Financeiro (${financeBadgeCount} p/ aprovar)` : 'Financeiro & Baixas',
@@ -2576,10 +2581,11 @@ export default function App() {
           </div>
         )}
 
+        {/* ABA: ALUNOS PRÉ-CADASTRADOS (SOMENTE PENDENTES) */}
         {activeTab === 'precadastro' && (
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-sm text-slate-300">Convites de Pré-Cadastro Enviados</h2>
+              <h2 className="font-bold text-sm text-slate-300">Alunos Pré-Cadastrados (Aguardando Ficha)</h2>
               <button
                 onClick={() => setShowPreRegModal(true)}
                 className="text-xs bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg"
@@ -2587,136 +2593,195 @@ export default function App() {
                 + Novo Pré-Cadastro
               </button>
             </div>
-            {visiblePreRegs.map(pr => {
-              const link = `${window.location.origin}/?token=${pr.token}`;
-              const waText = encodeURIComponent(`Olá ${pr.name}! Complete sua ficha de matrícula na Krya BJJ pelo link exclusivo: ${link}`);
-              const matchedStudent = students.find(
-                s =>
-                  (pr.generatedCode && s.code === pr.generatedCode) ||
-                  s.name.toLowerCase() === (pr.name || '').toLowerCase()
-              );
 
-              const handleOpenPreRegCard = () => {
-                setConfirmDelete(false);
-                if (matchedStudent && isMaster) {
-                  setEditingStudent({ ...matchedStudent });
-                } else {
-                  setEditingPreReg({ ...pr, matchedStudentId: matchedStudent?.id || null });
-                }
-              };
+            {pendingPreRegs.length === 0 ? (
+              <div className="text-center py-10 text-xs text-slate-400 bg-slate-900/50 border border-slate-800 rounded-2xl">
+                Nenhum aluno pré-cadastrado aguardando preenchimento no momento.
+              </div>
+            ) : (
+              pendingPreRegs.map(pr => {
+                const link = `${window.location.origin}/?token=${pr.token}`;
+                const waText = encodeURIComponent(`Olá ${pr.name}! Complete sua ficha de matrícula na Krya BJJ pelo link exclusivo: ${link}`);
 
-              return (
-                <div
-                  key={pr.token}
-                  onClick={handleOpenPreRegCard}
-                  className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-2.5 cursor-pointer transition"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold text-white truncate">{pr.name}</div>
-                      <div className="text-xs text-slate-400 truncate">{pr.phone} • {pr.email}</div>
-                      {pr.used && matchedStudent && (
-                        <div className="text-[11px] font-mono text-amber-300 mt-1">
-                          Login: {matchedStudent.code} • Senha: {matchedStudent.password}
-                        </div>
-                      )}
+                return (
+                  <div
+                    key={pr.token}
+                    onClick={() => {
+                      setConfirmDelete(false);
+                      setEditingPreReg({ ...pr });
+                    }}
+                    className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-2.5 cursor-pointer transition"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-white truncate">{pr.name}</div>
+                        <div className="text-xs text-slate-400 truncate">{pr.phone} • {pr.email}</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300">
+                          Aguardando Aluno
+                        </span>
+                        <button
+                          type="button"
+                          title="Editar ou ativar pré-cadastro"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDelete(false);
+                            setEditingPreReg({ ...pr });
+                          }}
+                          className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                        pr.used ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
-                      }`}>
-                        {pr.used
-                          ? `Ativo (${matchedStudent?.code || pr.generatedCode || 'Concluído'})`
-                          : 'Aguardando Aluno'}
-                      </span>
+
+                    <div className="flex flex-wrap gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
                       <button
-                        type="button"
-                        title="Abrir ficha ou editar pré-cadastro"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenPreRegCard();
+                        onClick={() => {
+                          setActivePreRegToken(pr.token);
+                          setCompName(pr.name || '');
+                          setCompPhone(pr.phone || '');
+                          setCompEmail(pr.email || '');
+                          setRole('complete_prereg');
                         }}
-                        className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
                       >
-                        <Settings className="w-4 h-4" />
+                        Abrir Ficha do Aluno
                       </button>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(link)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar Link
+                      </button>
+                      <a
+                        href={`https://wa.me/55${(pr.phone || '').replace(/\D/g, '')}?text=${waText}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold"
+                      >
+                        Enviar WhatsApp
+                      </a>
                     </div>
                   </div>
+                );
+              })
+            )}
+          </div>
+        )}
 
-                  <div className="flex flex-wrap gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-                    {!pr.used ? (
-                      <>
-                        <button
-                          onClick={() => {
-                            setActivePreRegToken(pr.token);
-                            setCompName(pr.name || '');
-                            setCompPhone(pr.phone || '');
-                            setCompEmail(pr.email || '');
-                            setRole('complete_prereg');
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
-                        >
-                          Abrir Ficha do Aluno (Testar)
-                        </button>
-                        <button
-                          onClick={() => navigator.clipboard?.writeText(link)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1"
-                        >
-                          <Copy className="w-3.5 h-3.5" /> Copiar Link
-                        </button>
-                        <a
-                          href={`https://wa.me/55${(pr.phone || '').replace(/\D/g, '')}?text=${waText}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold"
-                        >
-                          Enviar WhatsApp
-                        </a>
-                      </>
-                    ) : matchedStudent ? (
-                      <>
+        {/* ABA: ALUNOS CADASTRADOS (MATRÍCULA CONCLUÍDA) */}
+        {activeTab === 'cadastrados' && (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-sm text-slate-300">Alunos Cadastrados ({students.length})</h2>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Buscar aluno cadastrado por nome ou código..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm"
+              />
+            </div>
+
+            {students
+              .filter(s =>
+                s.name.toLowerCase().includes(search.toLowerCase()) ||
+                s.code.toLowerCase().includes(search.toLowerCase())
+              )
+              .map(st => {
+                const fin = getEffectiveFinancialState(st, students, config.dueToleranceDays);
+                return (
+                  <div
+                    key={st.id}
+                    onClick={() => {
+                      if (isMaster) {
+                        setEditingStudent({ ...st });
+                        setConfirmDelete(false);
+                      }
+                    }}
+                    className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5 ${
+                      isMaster ? 'cursor-pointer hover:border-amber-500/40 transition' : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-white truncate flex items-center gap-2">
+                          <span className="truncate">{st.name}</span>
+                          {fin.isBlocked && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-bold shrink-0">
+                              Inativo
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-400 truncate">
+                          {st.phone} • {st.email}
+                        </div>
+                        <div className="text-[11px] font-mono text-amber-300 mt-1">
+                          Login: {st.code} • Senha: {st.password}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400">
+                          Ativo ({st.code})
+                        </span>
                         {isMaster && (
                           <button
-                            onClick={() => { setEditingStudent({ ...matchedStudent }); setConfirmDelete(false); }}
-                            className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+                            type="button"
+                            title="Editar ou excluir aluno"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingStudent({ ...st });
+                              setConfirmDelete(false);
+                            }}
+                            className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition"
                           >
-                            Abrir Ficha do Aluno
+                            <Settings className="w-4 h-4" />
                           </button>
                         )}
-                        <a
-                          href={buildCredentialsWhatsAppLink(
-                            matchedStudent.phone || pr.phone,
-                            matchedStudent.name,
-                            matchedStudent.code,
-                            matchedStudent.password
-                          )}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
-                        >
-                          Enviar Login e Senha no WhatsApp
-                        </a>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                      {isMaster && (
                         <button
-                          onClick={() => navigator.clipboard?.writeText(
-                            `Krya BJJ - Login: ${matchedStudent.code} | Senha: ${matchedStudent.password}`
-                          )}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1"
+                          onClick={() => { setEditingStudent({ ...st }); setConfirmDelete(false); }}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
                         >
-                          <Copy className="w-3.5 h-3.5" /> Copiar Acesso
+                          Abrir Ficha do Aluno
                         </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => activateStudentFromPreReg(pr)}
-                        className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+                      )}
+                      <a
+                        href={buildCredentialsWhatsAppLink(st.phone, st.name, st.code, st.password)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
                       >
-                        Abrir / Gerar Ficha do Aluno
+                        Enviar Login e Senha no WhatsApp
+                      </a>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(
+                          `Krya BJJ - Login: ${st.code} | Senha: ${st.password}`
+                        )}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar Acesso
                       </button>
-                    )}
+                      <button
+                        onClick={() => { setLoggedStudentId(st.id); setRole('student'); }}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+                      >
+                        Ver App
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
 
