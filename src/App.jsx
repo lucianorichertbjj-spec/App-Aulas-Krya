@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   Users, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
-  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X, Mail
+  QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X, Mail, Calendar
 } from 'lucide-react';
 
 // =========================================================================
@@ -20,6 +20,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 function isPreRegUsed(val) {
   return val === true || val === 'true' || val === 1 || val === '1';
 }
+
+// =========================================================================
+// GRADE DE HORÁRIOS PADRÃO KRYA BJJ (EDITÁVEL PELO MASTER)
+// =========================================================================
+const INITIAL_SCHEDULES = [
+  { id: 'h_1830_baby', time: '18:30', title: 'Baby Kids (4-6)', tatame: 'Tatame 2', days: 'Seg / Qua / Sex' },
+  { id: 'h_1830_kids', time: '18:30', title: 'Kids / Juvenil (7-16)', tatame: 'Tatame 1', days: 'Seg a Sex' },
+  { id: 'h_1930_inic', time: '19:30', title: 'Adultos Iniciantes', tatame: 'Tatame 2', days: 'Seg a Sex' },
+  { id: 'h_1930_adul', time: '19:30', title: 'Adultos (16+)', tatame: 'Tatame 1', days: 'Seg a Sex' },
+  { id: 'h_2030_spar', time: '20:30', title: 'Adultos / Sparring', tatame: 'Tatame 1', days: 'Seg a Sex' },
+];
 
 // =========================================================================
 // GERADOR DE LOGIN E SENHA ALEATÓRIOS PARA PROFESSORES
@@ -406,6 +417,7 @@ const INITIAL_STUDENTS = [
     familyPlanId: '',
     familyTitularId: '',
     familyRequest: null,
+    pendingCheckin: null,
     photo: ''
   },
   {
@@ -434,6 +446,7 @@ const INITIAL_STUDENTS = [
     familyPlanId: '',
     familyTitularId: '',
     familyRequest: null,
+    pendingCheckin: null,
     photo: ''
   },
   {
@@ -462,6 +475,7 @@ const INITIAL_STUDENTS = [
     familyPlanId: '',
     familyTitularId: '',
     familyRequest: null,
+    pendingCheckin: null,
     photo: ''
   },
   {
@@ -490,6 +504,7 @@ const INITIAL_STUDENTS = [
     familyPlanId: '',
     familyTitularId: '',
     familyRequest: null,
+    pendingCheckin: null,
     photo: ''
   }
 ];
@@ -548,6 +563,10 @@ export default function App() {
     const saved = localStorage.getItem('krya_preregs_v1');
     return dedupePreRegs(saved ? JSON.parse(saved) : INITIAL_PRE_REGS);
   });
+  const [schedules, setSchedules] = useState(() => {
+    const saved = localStorage.getItem('krya_schedules_v1');
+    return saved ? JSON.parse(saved) : INITIAL_SCHEDULES;
+  });
   const [config, setConfig] = useState(() => {
     const saved = localStorage.getItem('krya_config_v1');
     if (saved) {
@@ -567,7 +586,16 @@ export default function App() {
     }
     return INITIAL_CONFIG;
   });
-  const [pendingCheckins, setPendingCheckins] = useState([]);
+
+  // HORÁRIO SELECIONADO (NO PAINEL DO ALUNO, PROFESSOR E ADMIN)
+  const [studentSelectedScheduleId, setStudentSelectedScheduleId] = useState(() => INITIAL_SCHEDULES[0]?.id || '');
+  const [staffActiveScheduleId, setStaffActiveScheduleId] = useState(() => INITIAL_SCHEDULES[0]?.id || '');
+
+  // NOVO HORÁRIO (MASTER)
+  const [newSchedTime, setNewSchedTime] = useState('18:30');
+  const [newSchedTitle, setNewSchedTitle] = useState('');
+  const [newSchedTatame, setNewSchedTatame] = useState('Tatame 1');
+  const [newSchedDays, setNewSchedDays] = useState('Seg a Sex');
 
   // SE ABRIR PELO LINK (?token=...), JÁ ENTRA DIRETO NA FICHA DE CADASTRO
   const [role, setRole] = useState(() => {
@@ -655,6 +683,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('krya_preregs_v1', JSON.stringify(preRegs));
   }, [preRegs]);
+  useEffect(() => {
+    localStorage.setItem('krya_schedules_v1', JSON.stringify(schedules));
+  }, [schedules]);
   useEffect(() => {
     localStorage.setItem('krya_config_v1', JSON.stringify(config));
   }, [config]);
@@ -980,6 +1011,7 @@ export default function App() {
       familyPlanId: '',
       familyTitularId: '',
       familyRequest: null,
+      pendingCheckin: null,
       photo: ''
     };
 
@@ -1140,6 +1172,7 @@ export default function App() {
         familyRequest: compWantFamily
           ? { planId: compFamilyPlanId, membersText: compFamilyMembers.trim(), status: 'pending' }
           : null,
+        pendingCheckin: null,
         photo: compPhoto
       };
 
@@ -1178,6 +1211,22 @@ export default function App() {
   const pendingPreRegs = useMemo(
     () => dedupePreRegs(preRegs).filter(p => !isPreRegUsed(p.used)),
     [preRegs]
+  );
+
+  // TODOS OS CHECK-INS PENDENTES DE APROVAÇÃO (SINCRONIZADOS VIA SUPABASE)
+  const allPendingCheckinStudents = useMemo(
+    () => students.filter(s => Boolean(s.pendingCheckin?.scheduleId)),
+    [students]
+  );
+
+  const activeStaffSchedule = useMemo(
+    () => schedules.find(sc => sc.id === staffActiveScheduleId) || schedules[0] || null,
+    [schedules, staffActiveScheduleId]
+  );
+
+  const checkinsForActiveSchedule = useMemo(
+    () => allPendingCheckinStudents.filter(s => s.pendingCheckin?.scheduleId === activeStaffSchedule?.id),
+    [allPendingCheckinStudents, activeStaffSchedule]
   );
 
   // =========================================================================
@@ -1675,7 +1724,9 @@ export default function App() {
     const beltName = isAdult
       ? (ADULT_BELTS.find(b => b.id === st.beltId)?.name || 'Branca')
       : (KIDS_BELTS.find(b => b.id === st.beltId)?.name || 'Branca');
-    const alreadyCheckedIn = pendingCheckins.includes(st.id);
+
+    const activeCheckin = st.pendingCheckin || null;
+    const selectedSched = schedules.find(sc => sc.id === studentSelectedScheduleId) || schedules[0];
 
     const familyPlan = st.familyRole === 'titular' ? getFamilyPlanById(st.familyPlanId) : null;
     const isAwaitingApproval = fin.paymentStatus === 'Aguardando aprovação';
@@ -1803,26 +1854,101 @@ export default function App() {
             )}
           </div>
 
-          <button
-            disabled={alreadyCheckedIn || fin.isBlocked}
-            onClick={() => setPendingCheckins(prev => [...prev, st.id])}
-            className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition ${
-              fin.isBlocked
-                ? 'bg-red-950/60 text-red-300 border border-red-800/60 cursor-not-allowed'
-                : alreadyCheckedIn
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg'
-            }`}
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            {fin.isBlocked
-              ? (isAwaitingApproval
-                  ? 'Check-in Bloqueado (Aguardando Aprovação do Pagamento)'
-                  : 'Check-in Bloqueado (Pendência Financeira)')
-              : alreadyCheckedIn
-              ? 'Presença Enviada (Aguardando Professor)'
-              : 'Registrar Presença no Treino de Hoje'}
-          </button>
+          {/* CARD DE HORÁRIOS E MARCAÇÃO DE PRESENÇA */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <Clock className="w-4 h-4" /> Horários de Treino • Check-in
+              </h3>
+              <span className="text-[11px] text-slate-400">{new Date().toLocaleDateString('pt-BR')}</span>
+            </div>
+
+            {activeCheckin ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/40 rounded-2xl p-3.5 space-y-2.5 text-center">
+                <div className="flex items-center justify-center gap-2 text-emerald-400 font-bold text-sm">
+                  <CheckCircle2 className="w-5 h-5" /> Presença Marcada!
+                </div>
+                <p className="text-xs text-slate-200">
+                  Horário escolhido: <strong className="text-amber-300">{activeCheckin.label}</strong>
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Aguardando confirmação do professor ou administrador na aula.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => saveStudent({ ...st, pendingCheckin: null })}
+                  className="text-xs text-red-300 hover:text-red-200 underline pt-1"
+                >
+                  Cancelar e escolher outro horário
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {schedules.map(sc => {
+                    const isSelected = selectedSched?.id === sc.id;
+                    return (
+                      <button
+                        type="button"
+                        key={sc.id}
+                        disabled={fin.isBlocked}
+                        onClick={() => setStudentSelectedScheduleId(sc.id)}
+                        className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition ${
+                          fin.isBlocked
+                            ? 'bg-slate-950/50 border-slate-800/60 opacity-50 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-amber-500/15 border-amber-500 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-sm flex items-center gap-2">
+                            <span className="text-amber-400 font-mono">{sc.time}</span>
+                            <span>{sc.title}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {sc.tatame} • {sc.days}
+                          </div>
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                          isSelected ? 'border-amber-400 bg-amber-400' : 'border-slate-600'
+                        }`}>
+                          {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  disabled={fin.isBlocked || !selectedSched}
+                  onClick={() => {
+                    if (!selectedSched) return;
+                    saveStudent({
+                      ...st,
+                      pendingCheckin: {
+                        scheduleId: selectedSched.id,
+                        label: `${selectedSched.time} — ${selectedSched.title} (${selectedSched.tatame})`,
+                        date: new Date().toLocaleDateString('pt-BR')
+                      }
+                    });
+                  }}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition ${
+                    fin.isBlocked
+                      ? 'bg-red-950/60 text-red-300 border border-red-800/60 cursor-not-allowed'
+                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg'
+                  }`}
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  {fin.isBlocked
+                    ? (isAwaitingApproval
+                        ? 'Check-in Bloqueado (Aguardando Aprovação do Pagamento)'
+                        : 'Check-in Bloqueado (Pendência Financeira)')
+                    : `Marcar Presença (${selectedSched?.time || ''})`}
+                </button>
+              </>
+            )}
+          </div>
 
           {/* CARD DE MENSALIDADE, PLANO FAMILIAR E PAGAMENTO PIX */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
@@ -2132,31 +2258,68 @@ export default function App() {
         </div>
 
         <div className="max-w-lg mx-auto p-4 space-y-4">
-          {pendingCheckins.length > 0 && (
-            <div className="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-3.5 space-y-2">
-              <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                <Clock className="w-4 h-4" /> Check-ins Aguardando Confirmação ({pendingCheckins.length})
+          {/* SELETOR DE HORÁRIO ATUAL DO PROFESSOR + CONFIRMAÇÃO DE PRESENÇAS */}
+          <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-amber-400 uppercase flex items-center gap-1.5">
+                <Clock className="w-4 h-4" /> Horário da Aula Atual
               </div>
-              {pendingCheckins.map(stId => {
-                const st = students.find(s => s.id === stId);
-                if (!st) return null;
+              <span className="text-[11px] bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                {checkinsForActiveSchedule.length} aguardando
+              </span>
+            </div>
+
+            <select
+              value={activeStaffSchedule?.id || ''}
+              onChange={(e) => setStaffActiveScheduleId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-white"
+            >
+              {schedules.map(sc => {
+                const count = allPendingCheckinStudents.filter(s => s.pendingCheckin?.scheduleId === sc.id).length;
                 return (
-                  <div key={stId} className="flex items-center justify-between bg-slate-900 p-2.5 rounded-xl">
-                    <span className="text-sm font-semibold">{st.name}</span>
-                    <button
-                      onClick={() => {
-                        saveStudent({ ...st, classesInCurrentDegree: st.classesInCurrentDegree + 1 });
-                        setPendingCheckins(prev => prev.filter(id => id !== stId));
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 text-xs font-bold"
-                    >
-                      Aprovar +1 Aula
-                    </button>
-                  </div>
+                  <option key={sc.id} value={sc.id}>
+                    {sc.time} — {sc.title} ({sc.tatame}){count > 0 ? ` [${count} pendente${count > 1 ? 's' : ''}]` : ''}
+                  </option>
                 );
               })}
-            </div>
-          )}
+            </select>
+
+            {checkinsForActiveSchedule.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-2">
+                Nenhum aluno marcou presença neste horário ainda.
+              </p>
+            ) : (
+              <div className="space-y-2 pt-1">
+                {checkinsForActiveSchedule.map(st => (
+                  <div key={st.id} className="flex items-center justify-between gap-2 bg-slate-950 border border-slate-800 p-2.5 rounded-xl">
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-white truncate">{st.name}</div>
+                      <div className="text-[11px] text-slate-400">{st.category} • {st.code}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => saveStudent({
+                          ...st,
+                          classesInCurrentDegree: st.classesInCurrentDegree + 1,
+                          pendingCheckin: null
+                        })}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold"
+                      >
+                        Aprovar +1 Aula
+                      </button>
+                      <button
+                        title="Remover check-in"
+                        onClick={() => saveStudent({ ...st, pendingCheckin: null })}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -2349,6 +2512,13 @@ export default function App() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
             { id: 'alunos', label: `Turmas & Equipe (${students.length + professors.length})`, icon: Users },
+            {
+              id: 'horarios',
+              label: allPendingCheckinStudents.length > 0
+                ? `Horários & Presenças (${allPendingCheckinStudents.length})`
+                : 'Horários & Presenças',
+              icon: Calendar
+            },
             { id: 'precadastro', label: `Alunos Pré-Cadastrados (${pendingPreRegs.length})`, icon: LinkIconFallback },
             { id: 'cadastrados', label: `Alunos Cadastrados (${students.length})`, icon: CheckCircle2 },
             {
@@ -2373,6 +2543,162 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {/* ABA: HORÁRIOS & PRESENÇAS (ADMIN / MASTER) */}
+        {activeTab === 'horarios' && (
+          <div className="mt-4 space-y-4">
+            <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold text-sm text-amber-400 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" /> Selecionar Horário da Aula para Confirmar Presenças
+                </h2>
+                <span className="text-[11px] bg-amber-500/15 text-amber-300 px-2.5 py-0.5 rounded-full font-bold">
+                  {checkinsForActiveSchedule.length} neste horário
+                </span>
+              </div>
+
+              <select
+                value={activeStaffSchedule?.id || ''}
+                onChange={(e) => setStaffActiveScheduleId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-white"
+              >
+                {schedules.map(sc => {
+                  const count = allPendingCheckinStudents.filter(s => s.pendingCheckin?.scheduleId === sc.id).length;
+                  return (
+                    <option key={sc.id} value={sc.id}>
+                      {sc.time} — {sc.title} ({sc.tatame}){count > 0 ? ` [${count} pendente${count > 1 ? 's' : ''}]` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+
+              {checkinsForActiveSchedule.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl">
+                  Nenhum aluno aguardando confirmação de presença neste horário.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {checkinsForActiveSchedule.map(st => (
+                    <div key={st.id} className="flex items-center justify-between gap-2 bg-slate-950 border border-slate-800 p-3 rounded-xl">
+                      <div>
+                        <div className="font-bold text-sm text-white">{st.name}</div>
+                        <div className="text-xs text-slate-400">{st.category} • {st.code}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => saveStudent({
+                            ...st,
+                            classesInCurrentDegree: st.classesInCurrentDegree + 1,
+                            pendingCheckin: null
+                          })}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold"
+                        >
+                          Confirmar +1 Aula
+                        </button>
+                        <button
+                          title="Remover check-in"
+                          onClick={() => saveStudent({ ...st, pendingCheckin: null })}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* GRADE DE HORÁRIOS DA ACADEMIA (MASTER PODE ADICIONAR/REMOVER) */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <h3 className="font-bold text-sm text-slate-200">Grade de Horários Krya BJJ</h3>
+              <div className="space-y-2">
+                {schedules.map(sc => (
+                  <div key={sc.id} className="flex items-center justify-between bg-slate-950 border border-slate-800 p-3 rounded-xl">
+                    <div>
+                      <div className="font-bold text-sm text-white">
+                        <span className="text-amber-400 font-mono mr-2">{sc.time}</span>
+                        {sc.title}
+                      </div>
+                      <div className="text-xs text-slate-400">{sc.tatame} • {sc.days}</div>
+                    </div>
+                    {isMaster && (
+                      <button
+                        type="button"
+                        title="Excluir horário"
+                        onClick={() => setSchedules(prev => prev.filter(x => x.id !== sc.id))}
+                        className="p-2 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {isMaster && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!newSchedTime.trim() || !newSchedTitle.trim()) return;
+                    const created = {
+                      id: 'h_' + Date.now(),
+                      time: newSchedTime.trim(),
+                      title: newSchedTitle.trim(),
+                      tatame: newSchedTatame,
+                      days: newSchedDays.trim() || 'Seg a Sex'
+                    };
+                    setSchedules(prev => [...prev, created]);
+                    setNewSchedTitle('');
+                  }}
+                  className="pt-3 border-t border-slate-800 space-y-2.5"
+                >
+                  <div className="text-xs font-bold text-amber-400">Adicionar Novo Horário</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      type="time"
+                      required
+                      value={newSchedTime}
+                      onChange={(e) => setNewSchedTime(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Turma (Ex.: Adulto No-Gi)"
+                      value={newSchedTitle}
+                      onChange={(e) => setNewSchedTitle(e.target.value)}
+                      className="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={newSchedTatame}
+                      onChange={(e) => setNewSchedTatame(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    >
+                      <option value="Tatame 1">Tatame 1</option>
+                      <option value="Tatame 2">Tatame 2</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Dias (Ex.: Seg / Qua / Sex)"
+                      value={newSchedDays}
+                      onChange={(e) => setNewSchedDays(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
+                  >
+                    + Adicionar Horário na Grade
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
 
         {activeTab === 'alunos' && (
           <div className="mt-4 space-y-4">
