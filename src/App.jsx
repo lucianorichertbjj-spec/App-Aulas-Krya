@@ -85,6 +85,31 @@ function dedupePreRegs(list) {
 }
 
 // =========================================================================
+// GERADOR DE LINK DE PRÉ-CADASTRO (ABRE A FICHA DIRETO NO CELULAR DO ALUNO)
+// =========================================================================
+function buildPreRegLink(pr) {
+  const params = new URLSearchParams();
+  params.set('token', pr.token);
+  if (pr.name) params.set('n', pr.name);
+  if (pr.phone) params.set('p', pr.phone);
+  if (pr.email) params.set('e', pr.email);
+  return `${window.location.origin}/?${params.toString()}`;
+}
+
+function getInitialUrlPreReg() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (!token) return null;
+  return {
+    token: token.trim().toUpperCase(),
+    name: params.get('n') || '',
+    phone: params.get('p') || '',
+    email: params.get('e') || '',
+    used: false
+  };
+}
+
+// =========================================================================
 // GERADOR OFICIAL DE PIX COPIA E COLA (PADRÃO EMV / BANCO CENTRAL + CRC16)
 // =========================================================================
 function crc16CCITT(str) {
@@ -499,6 +524,8 @@ function extractRecord(row) {
 }
 
 export default function App() {
+  const initialUrlPreReg = useMemo(() => getInitialUrlPreReg(), []);
+
   const [cloudConnected, setCloudConnected] = useState(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState('Sincronizando com Supabase...');
   const [loadingCloud, setLoadingCloud] = useState(true);
@@ -536,8 +563,9 @@ export default function App() {
   });
   const [pendingCheckins, setPendingCheckins] = useState([]);
 
-  // SESSÃO PERSISTENTE
+  // SE ABRIR PELO LINK (?token=...), JÁ ENTRA DIRETO NA FICHA DE CADASTRO
   const [role, setRole] = useState(() => {
+    if (initialUrlPreReg) return 'complete_prereg';
     const saved = localStorage.getItem('krya_role_v1');
     return saved && saved !== 'complete_prereg' ? saved : null;
   });
@@ -559,7 +587,8 @@ export default function App() {
   const [recoveredStudent, setRecoveredStudent] = useState(null);
   const [searchingRecovery, setSearchingRecovery] = useState(false);
 
-  const [activePreRegToken, setActivePreRegToken] = useState(null);
+  const [activePreRegToken, setActivePreRegToken] = useState(() => initialUrlPreReg?.token || null);
+  const [urlPreRegFallback, setUrlPreRegFallback] = useState(() => initialUrlPreReg);
   const [showPreRegModal, setShowPreRegModal] = useState(false);
   const [newPreName, setNewPreName] = useState('');
   const [newPrePhone, setNewPrePhone] = useState('');
@@ -568,10 +597,10 @@ export default function App() {
   const [copiedCreds, setCopiedCreds] = useState(false);
   const [submittingPreReg, setSubmittingPreReg] = useState(false);
 
-  // CAMPOS DA FICHA CADASTRAL DO ALUNO
-  const [compName, setCompName] = useState('');
-  const [compPhone, setCompPhone] = useState('');
-  const [compEmail, setCompEmail] = useState('');
+  // CAMPOS DA FICHA CADASTRAL DO ALUNO (JÁ PRÉ-PREENCHIDOS SE VIEREM NO LINK)
+  const [compName, setCompName] = useState(() => initialUrlPreReg?.name || '');
+  const [compPhone, setCompPhone] = useState(() => initialUrlPreReg?.phone || '');
+  const [compEmail, setCompEmail] = useState(() => initialUrlPreReg?.email || '');
   const [compBirth, setCompBirth] = useState('2000-01-01');
   const [compGuardian, setCompGuardian] = useState('');
   const [compCep, setCompCep] = useState('');
@@ -705,6 +734,8 @@ export default function App() {
     setRole(null);
     setLoggedStudentId(null);
     setSelectedFolder(null);
+    setActivePreRegToken(null);
+    setUrlPreRegFallback(null);
     localStorage.removeItem('krya_role_v1');
     localStorage.removeItem('krya_student_id_v1');
     if (window.location.search.includes('token=')) {
@@ -803,40 +834,30 @@ export default function App() {
   }, []);
 
   // =========================================================================
-  // LEITURA DIRETA DO TOKEN DA URL
+  // VERIFICAÇÃO DO TOKEN NO SUPABASE EM SEGUNDO PLANO (SEM BLOQUEAR A FICHA)
   // =========================================================================
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      const cleanToken = token.trim().toUpperCase();
-      setActivePreRegToken(cleanToken);
-      setRole('complete_prereg');
+    if (!initialUrlPreReg || !supabase) return;
 
-      if (supabase) {
-        setLoadingCloud(true);
-        supabase
-          .from('Krya_preregs')
-          .select('*')
-          .eq('token', cleanToken)
-          .maybeSingle()
-          .then(({ data, error }) => {
-            if (!error && data) {
-              const rec = extractRecord(data);
-              setCompName(rec.name || '');
-              setCompPhone(rec.phone || '');
-              setCompEmail(rec.email || '');
-              setPreRegs(prev => {
-                const exists = prev.some(p => p.token === rec.token);
-                const updated = exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
-                return dedupePreRegs(updated);
-              });
-            }
-            setLoadingCloud(false);
+    supabase
+      .from('Krya_preregs')
+      .select('*')
+      .eq('token', initialUrlPreReg.token)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data) {
+          const rec = extractRecord(data);
+          setCompName(prev => prev || rec.name || '');
+          setCompPhone(prev => prev || rec.phone || '');
+          setCompEmail(prev => prev || rec.email || '');
+          setPreRegs(prev => {
+            const exists = prev.some(p => p.token === rec.token);
+            const updated = exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
+            return dedupePreRegs(updated);
           });
-      }
-    }
-  }, []);
+        }
+      });
+  }, [initialUrlPreReg]);
 
   const saveStudent = async (st) => {
     setStudents(prev => {
@@ -893,10 +914,7 @@ export default function App() {
         used: pr.used
       });
       if (error) {
-        const { error: jsonError } = await supabase.from('Krya_preregs').upsert({ token: pr.token, data: pr });
-        if (jsonError) {
-          alert('Erro ao salvar pré-cadastro na nuvem: ' + jsonError.message);
-        }
+        await supabase.from('Krya_preregs').upsert({ token: pr.token, data: pr });
       }
     }
   };
@@ -1040,14 +1058,18 @@ export default function App() {
 
   const handleFinishPreReg = async (e) => {
     e.preventDefault();
-    const pr = preRegs.find(p => p.token === activePreRegToken);
+    const pr =
+      preRegs.find(p => p.token === activePreRegToken) ||
+      urlPreRegFallback ||
+      (activePreRegToken ? { token: activePreRegToken, name: compName, phone: compPhone, email: compEmail, used: false } : null);
+
     if (!pr || pr.used || submittingPreReg) return;
 
     setSubmittingPreReg(true);
     try {
-      const finalName = compName.trim() || pr.name;
-      const finalPhone = compPhone.trim() || pr.phone;
-      const finalEmail = compEmail.trim() || pr.email;
+      const finalName = compName.trim() || pr.name || 'Aluno Krya';
+      const finalPhone = compPhone.trim() || pr.phone || '';
+      const finalEmail = compEmail.trim() || pr.email || '';
       const age = calculateAge(compBirth);
       const category = getCategoryFromAge(age);
       const fee = age <= 16 ? config.kidsFee : config.adultFee;
@@ -1122,7 +1144,11 @@ export default function App() {
   // TELA DE FICHA CADASTRAL DO ALUNO (LINK DE PRÉ-CADASTRO)
   // =========================================================================
   if (role === 'complete_prereg') {
-    const pr = preRegs.find(p => p.token === activePreRegToken);
+    const pr =
+      preRegs.find(p => p.token === activePreRegToken) ||
+      urlPreRegFallback ||
+      (activePreRegToken ? { token: activePreRegToken, name: compName, phone: compPhone, email: compEmail, used: false } : null);
+
     const previewAge = calculateAge(compBirth);
     const previewCat = getCategoryFromAge(previewAge);
     const previewFee = previewAge <= 16 ? config.kidsFee : config.adultFee;
@@ -1143,11 +1169,7 @@ export default function App() {
             </button>
           </div>
 
-          {loadingCloud ? (
-            <div className="text-center py-8 text-sm text-slate-400">
-              Carregando ficha de pré-cadastro...
-            </div>
-          ) : !pr ? (
+          {!pr ? (
             <div className="text-center py-8">
               <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
               <h2 className="font-bold text-lg">Link inválido ou expirado</h2>
@@ -1230,7 +1252,7 @@ export default function App() {
             <form onSubmit={handleFinishPreReg} className="space-y-3.5">
               <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs">
                 <div className="text-amber-400 font-semibold">Pré-cadastro ({pr.token})</div>
-                <p className="text-slate-400 mt-0.5">Complete seus dados abaixo e salve para receber seu login e senha.</p>
+                <p className="text-slate-400 mt-0.5">Complete seus dados abaixo e salve para receber seu login e senha na hora.</p>
               </div>
 
               <div>
@@ -1410,7 +1432,7 @@ export default function App() {
                 disabled={submittingPreReg}
                 className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-sm transition shadow-lg"
               >
-                {submittingPreReg ? 'Salvando Ficha...' : 'Salvar Ficha e Gerar Login e Senha'}
+                {submittingPreReg ? 'Salvando Ficha...' : 'Finalizar Cadastro e Gerar Login e Senha'}
               </button>
             </form>
           )}
@@ -2600,7 +2622,7 @@ export default function App() {
               </div>
             ) : (
               pendingPreRegs.map(pr => {
-                const link = `${window.location.origin}/?token=${pr.token}`;
+                const link = buildPreRegLink(pr);
                 const waText = encodeURIComponent(`Olá ${pr.name}! Complete sua ficha de matrícula na Krya BJJ pelo link exclusivo: ${link}`);
 
                 return (
@@ -2640,6 +2662,7 @@ export default function App() {
                       <button
                         onClick={() => {
                           setActivePreRegToken(pr.token);
+                          setUrlPreRegFallback(pr);
                           setCompName(pr.name || '');
                           setCompPhone(pr.phone || '');
                           setCompEmail(pr.email || '');
