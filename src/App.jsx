@@ -33,15 +33,16 @@ const INITIAL_SCHEDULES = [
 ];
 
 // =========================================================================
-// GERADOR DE LOGIN E SENHA ALEATÓRIOS PARA PROFESSORES
+// GERADOR DE LOGIN E SENHA ALEATÓRIOS PARA PROFESSORES E ADMINISTRADORES
 // =========================================================================
-function generateProfessorCredentials(name) {
-  const cleanFirst = (name || 'PROF')
-    .replace(/^prof\.?\s*/i, '')
+function generateStaffCredentials(name, memberRole = 'prof') {
+  const fallback = memberRole === 'admin' ? 'ADMIN' : 'PROF';
+  const cleanFirst = (name || fallback)
+    .replace(/^(prof\.?|admin\.?|adm\.?)\s*/i, '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .split(' ')[0]
     .toUpperCase()
-    .replace(/[^A-Z]/g, '') || 'PROF';
+    .replace(/[^A-Z]/g, '') || fallback;
 
   const login = `${cleanFirst}${String(Math.floor(10 + Math.random() * 89))}`;
   const password = String(Math.floor(100000 + Math.random() * 900000));
@@ -510,8 +511,9 @@ const INITIAL_STUDENTS = [
 ];
 
 const INITIAL_PROFESSORS = [
-  { id: 'prof-luciano', name: 'Prof. Luciano Richert', login: 'LUCIANO01', password: '123456', beltId: 'preta', degrees: 1, classes: 'Adultos, Kids & Baby Kids', photo: '' },
-  { id: 'prof-cris', name: 'Prof. Cris', login: 'CRIS02', password: '123456', beltId: 'marrom', degrees: 2, classes: 'Adultos & Kids Juvenil', photo: '' }
+  { id: 'prof-luciano', name: 'Prof. Luciano Richert', role: 'prof', login: 'LUCIANO01', password: '123456', beltId: 'preta', degrees: 1, classes: 'Adultos, Kids & Baby Kids', photo: '' },
+  { id: 'prof-cris', name: 'Prof. Cris', role: 'prof', login: 'CRIS02', password: '123456', beltId: 'marrom', degrees: 2, classes: 'Adultos & Kids Juvenil', photo: '' },
+  { id: 'admin-krya', name: 'Admin Krya', role: 'admin', login: 'ADMIN01', password: '123456', beltId: 'preta', degrees: 0, classes: 'Administração & Recepção', photo: '' }
 ];
 
 const INITIAL_PRE_REGS = [
@@ -669,10 +671,11 @@ export default function App() {
   const [editingPreReg, setEditingPreReg] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // NOVO PROFESSOR OU ADMINISTRADOR (MASTER)
   const [newProfName, setNewProfName] = useState('');
+  const [newProfRole, setNewProfRole] = useState('prof');
   const [newProfBelt, setNewProfBelt] = useState('preta');
   const [newProfDegrees, setNewProfDegrees] = useState(0);
-  const [newProfClasses] = useState('Adultos & Kids');
   const [lastCreatedProf, setLastCreatedProf] = useState(null);
 
   useEffect(() => {
@@ -1031,19 +1034,29 @@ export default function App() {
     const pass = passInput.trim();
 
     if (pass === config.masterPass || (user.toLowerCase() === 'master' && pass === config.masterPass)) {
+      setLoggedProfId(null);
       setRole('master'); setActiveTab('alunos'); setSelectedFolder(null); return;
     }
-    if (pass === config.adminPass || (user.toLowerCase() === 'admin' && pass === config.adminPass)) {
-      setRole('admin'); setActiveTab('alunos'); setSelectedFolder(null); return;
-    }
 
-    const foundProf = professors.find(
+    // VERIFICA PROFESSORES E ADMINISTRADORES CADASTRADOS PELO MASTER
+    const foundStaff = professors.find(
       p => p.login && p.login.toLowerCase() === user.toLowerCase() && p.password === pass
     );
-    if (foundProf) {
-      setLoggedProfId(foundProf.id);
-      setRole('prof');
+    if (foundStaff) {
+      setLoggedProfId(foundStaff.id);
+      if (foundStaff.role === 'admin') {
+        setRole('admin');
+        setActiveTab('alunos');
+        setSelectedFolder(null);
+      } else {
+        setRole('prof');
+      }
       return;
+    }
+
+    if (pass === config.adminPass || (user.toLowerCase() === 'admin' && pass === config.adminPass)) {
+      setLoggedProfId(null);
+      setRole('admin'); setActiveTab('alunos'); setSelectedFolder(null); return;
     }
 
     if (pass === config.profPass || (user.toLowerCase() === 'prof' && pass === config.profPass)) {
@@ -1207,6 +1220,12 @@ export default function App() {
   const currentProfessor = useMemo(
     () => professors.find(p => p.id === loggedProfId) || null,
     [professors, loggedProfId]
+  );
+
+  // SOMENTE PROFESSORES (PARA EXIBIÇÃO AO ALUNO E AO ADMIN)
+  const onlyProfessors = useMemo(
+    () => professors.filter(p => p.role !== 'admin'),
+    [professors]
   );
 
   // SOMENTE PRÉ-CADASTROS PENDENTES (SAI AUTOMATICAMENTE QUANDO COMPLETA O CADASTRO)
@@ -1560,10 +1579,10 @@ export default function App() {
 
           <form onSubmit={handleLogin} className="space-y-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Código do Aluno, Professor, E-mail ou Perfil</label>
+              <label className="block text-xs text-slate-400 mb-1">Código do Aluno, Professor, Admin, E-mail ou Perfil</label>
               <input
                 type="text"
-                placeholder="Ex.: HEITOR12, LUCIANO01 ou master"
+                placeholder="Ex.: HEITOR12, LUCIANO01, ADMIN01 ou master"
                 value={loginInput}
                 onChange={(e) => setLoginInput(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:border-amber-500 outline-none"
@@ -2045,7 +2064,7 @@ export default function App() {
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Professores Krya BJJ</h3>
             <div className="space-y-2.5">
-              {professors.map(prof => {
+              {onlyProfessors.map(prof => {
                 const pb = ADULT_BELTS.find(b => b.id === prof.beltId) || ADULT_BELTS[4];
                 return (
                   <div key={prof.id} className="flex items-center gap-3 bg-slate-950 p-2.5 rounded-2xl border border-slate-800">
@@ -2418,6 +2437,8 @@ export default function App() {
   // PAINEL MASTER & ADMINISTRADOR
   // =========================================================================
   const isMaster = role === 'master';
+  const visibleStaff = isMaster ? professors : onlyProfessors;
+
   const totalRevenue = students
     .filter(s => s.familyRole !== 'dependente' && s.paymentStatus === 'Em dia')
     .reduce((acc, s) => acc + Number(s.fee || 0), 0);
@@ -2467,11 +2488,11 @@ export default function App() {
     },
     {
       id: 'professores',
-      title: 'Professores',
-      subtitle: 'Equipe técnica Krya BJJ',
-      count: professors.length,
+      title: isMaster ? 'Professores & Admins' : 'Professores',
+      subtitle: isMaster ? 'Equipe técnica e administração Krya BJJ' : 'Equipe técnica Krya BJJ',
+      count: visibleStaff.length,
       accentClass: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
-      items: professors
+      items: visibleStaff
     }
   ];
 
@@ -2490,7 +2511,11 @@ export default function App() {
           <div>
             <div className="font-black text-sm leading-tight">KRYA BJJ</div>
             <div className="text-[10px] text-amber-400 uppercase font-bold">
-              {isMaster ? 'Controle Total • Dono Master' : 'Painel Administrativo'}
+              {isMaster
+                ? 'Controle Total • Dono Master'
+                : currentProfessor
+                ? `Painel Administrativo • ${currentProfessor.name}`
+                : 'Painel Administrativo'}
             </div>
           </div>
         </div>
@@ -2513,7 +2538,7 @@ export default function App() {
       <div className="max-w-4xl mx-auto px-4 pt-4">
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
-            { id: 'alunos', label: `Turmas & Equipe (${students.length + professors.length})`, icon: Users },
+            { id: 'alunos', label: `Turmas & Equipe (${students.length + visibleStaff.length})`, icon: Users },
             {
               id: 'horarios',
               label: allPendingCheckinStudents.length > 0
@@ -2768,7 +2793,7 @@ export default function App() {
                     type="text"
                     placeholder={
                       selectedFolder === 'professores'
-                        ? 'Buscar professor por nome...'
+                        ? (isMaster ? 'Buscar professor ou administrador...' : 'Buscar professor por nome...')
                         : 'Buscar aluno por nome ou código...'
                     }
                     value={search}
@@ -2783,7 +2808,9 @@ export default function App() {
                       <div className="bg-emerald-500/10 border border-emerald-500/40 rounded-2xl p-3.5 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-emerald-400">
-                            Professor cadastrado com acesso gerado!
+                            {lastCreatedProf.role === 'admin'
+                              ? 'Administrador cadastrado com acesso gerado!'
+                              : 'Professor cadastrado com acesso gerado!'}
                           </span>
                           <button
                             type="button"
@@ -2800,101 +2827,117 @@ export default function App() {
                     )}
 
                     <div className="grid sm:grid-cols-2 gap-3">
-                      {professors
+                      {visibleStaff
                         .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
-                        .map(prof => (
-                          <div
-                            key={prof.id}
-                            onClick={() => {
-                              if (isMaster) {
-                                setEditingProf({ ...prof });
-                                setConfirmDelete(false);
-                              }
-                            }}
-                            className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5 ${
-                              isMaster ? 'cursor-pointer hover:border-amber-500/40 transition' : ''
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                                {prof.photo ? (
-                                  <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
-                                ) : (
-                                  <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
-                                    {prof.name.replace('Prof. ', '')[0]}
-                                  </div>
-                                )}
-                                {isMaster && (
-                                  <label className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1.5 rounded-full cursor-pointer">
-                                    <Camera className="w-3 h-3" />
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={async (e) => {
-                                        if (e.target.files?.[0]) {
-                                          const compressed = await compressImage(e.target.files[0]);
-                                          saveProfessor({ ...prof, photo: compressed });
-                                        }
-                                      }}
-                                    />
-                                  </label>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm truncate">{prof.name}</div>
-                                <div className="text-xs text-slate-400 truncate">{prof.classes}</div>
-                                <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
-                                  Faixa {prof.beltId} • {prof.degrees}º Grau
+                        .map(prof => {
+                          const isStaffAdmin = prof.role === 'admin';
+                          return (
+                            <div
+                              key={prof.id}
+                              onClick={() => {
+                                if (isMaster) {
+                                  setEditingProf({ ...prof, role: prof.role || 'prof' });
+                                  setConfirmDelete(false);
+                                }
+                              }}
+                              className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5 ${
+                                isMaster ? 'cursor-pointer hover:border-amber-500/40 transition' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                  {prof.photo ? (
+                                    <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
+                                  ) : (
+                                    <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
+                                      {prof.name.replace(/^(Prof\.?|Admin\.?)\s*/i, '')[0] || 'K'}
+                                    </div>
+                                  )}
+                                  {isMaster && (
+                                    <label className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1.5 rounded-full cursor-pointer">
+                                      <Camera className="w-3 h-3" />
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={async (e) => {
+                                          if (e.target.files?.[0]) {
+                                            const compressed = await compressImage(e.target.files[0]);
+                                            saveProfessor({ ...prof, photo: compressed });
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  )}
                                 </div>
-                                {isMaster && prof.login && (
-                                  <div className="text-[11px] font-mono text-slate-300 mt-1">
-                                    Login: <span className="text-amber-300">{prof.login}</span> • Senha: <span className="text-emerald-400">{prof.password}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-sm truncate flex items-center gap-1.5">
+                                    <span className="truncate">{prof.name}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                                      isStaffAdmin
+                                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                        : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                    }`}>
+                                      {isStaffAdmin ? 'Admin' : 'Prof'}
+                                    </span>
                                   </div>
+                                  <div className="text-xs text-slate-400 truncate">
+                                    {prof.classes || (isStaffAdmin ? 'Administração & Recepção' : 'Adultos & Kids')}
+                                  </div>
+                                  <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
+                                    {isStaffAdmin
+                                      ? 'Painel Administrativo'
+                                      : `Faixa ${prof.beltId} • ${prof.degrees}º Grau`}
+                                  </div>
+                                  {isMaster && prof.login && (
+                                    <div className="text-[11px] font-mono text-slate-300 mt-1">
+                                      Login: <span className="text-amber-300">{prof.login}</span> • Senha: <span className="text-emerald-400">{prof.password}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                {isMaster && (
+                                  <button
+                                    type="button"
+                                    title="Editar ou excluir"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingProf({ ...prof, role: prof.role || 'prof' });
+                                      setConfirmDelete(false);
+                                    }}
+                                    className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition shrink-0"
+                                  >
+                                    <Settings className="w-4 h-4" />
+                                  </button>
                                 )}
                               </div>
-                              {isMaster && (
-                                <button
-                                  type="button"
-                                  title="Editar ou excluir professor"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingProf({ ...prof });
-                                    setConfirmDelete(false);
-                                  }}
-                                  className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition shrink-0"
+
+                              {isMaster && prof.login && (
+                                <div
+                                  className="flex gap-2 pt-2 border-t border-slate-800"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <Settings className="w-4 h-4" />
-                                </button>
+                                  <a
+                                    href={buildCredentialsWhatsAppLink('', prof.name, prof.login, prof.password)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex-1 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center"
+                                  >
+                                    Enviar WhatsApp
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard?.writeText(
+                                      `Krya BJJ (${isStaffAdmin ? 'Administrador' : 'Professor'}) - Login: ${prof.login} | Senha: ${prof.password}`
+                                    )}
+                                    className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" /> Copiar Acesso
+                                  </button>
+                                </div>
                               )}
                             </div>
-
-                            {isMaster && prof.login && (
-                              <div
-                                className="flex gap-2 pt-2 border-t border-slate-800"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <a
-                                  href={buildCredentialsWhatsAppLink('', prof.name, prof.login, prof.password)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex-1 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center"
-                                >
-                                  Enviar WhatsApp
-                                </a>
-                                <button
-                                  type="button"
-                                  onClick={() => navigator.clipboard?.writeText(
-                                    `Krya BJJ (Professor) - Login: ${prof.login} | Senha: ${prof.password}`
-                                  )}
-                                  className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1"
-                                >
-                                  <Copy className="w-3.5 h-3.5" /> Copiar Acesso
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                     </div>
 
                     {isMaster && (
@@ -2902,15 +2945,16 @@ export default function App() {
                         onSubmit={(e) => {
                           e.preventDefault();
                           if (!newProfName.trim()) return;
-                          const { login, password } = generateProfessorCredentials(newProfName.trim());
+                          const { login, password } = generateStaffCredentials(newProfName.trim(), newProfRole);
                           const created = {
-                            id: 'prof-' + Date.now(),
+                            id: (newProfRole === 'admin' ? 'admin-' : 'prof-') + Date.now(),
                             name: newProfName.trim(),
+                            role: newProfRole,
                             login,
                             password,
-                            beltId: newProfBelt,
-                            degrees: Number(newProfDegrees),
-                            classes: newProfClasses,
+                            beltId: newProfRole === 'admin' ? 'preta' : newProfBelt,
+                            degrees: newProfRole === 'admin' ? 0 : Number(newProfDegrees),
+                            classes: newProfRole === 'admin' ? 'Administração & Recepção' : 'Adultos & Kids',
                             photo: ''
                           };
                           saveProfessor(created);
@@ -2919,34 +2963,62 @@ export default function App() {
                         }}
                         className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3"
                       >
-                        <h3 className="font-bold text-sm">Cadastrar Novo Professor (Gera Login e Senha)</h3>
+                        <h3 className="font-bold text-sm">Cadastrar Professor ou Administrador (Gera Login e Senha)</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNewProfRole('prof')}
+                            className={`py-2 rounded-xl text-xs font-bold border transition ${
+                              newProfRole === 'prof'
+                                ? 'bg-amber-500 text-slate-950 border-amber-400'
+                                : 'bg-slate-950 text-slate-300 border-slate-800'
+                            }`}
+                          >
+                            Professor
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewProfRole('admin')}
+                            className={`py-2 rounded-xl text-xs font-bold border transition ${
+                              newProfRole === 'admin'
+                                ? 'bg-amber-500 text-slate-950 border-amber-400'
+                                : 'bg-slate-950 text-slate-300 border-slate-800'
+                            }`}
+                          >
+                            Administrador
+                          </button>
+                        </div>
                         <input
                           type="text"
-                          placeholder="Nome (Ex.: Prof. Matheus)"
+                          placeholder={newProfRole === 'admin' ? 'Nome do Admin (Ex.: Cris / Recepção)' : 'Nome (Ex.: Prof. Matheus)'}
                           value={newProfName}
                           onChange={(e) => setNewProfName(e.target.value)}
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
                         />
-                        <div className="grid grid-cols-2 gap-2">
-                          <select
-                            value={newProfBelt}
-                            onChange={(e) => setNewProfBelt(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-                          >
-                            {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
-                          </select>
-                          <input
-                            type="number"
-                            min={0}
-                            max={6}
-                            placeholder="Graus"
-                            value={newProfDegrees}
-                            onChange={(e) => setNewProfDegrees(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-                          />
-                        </div>
+                        {newProfRole !== 'admin' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={newProfBelt}
+                              onChange={(e) => setNewProfBelt(e.target.value)}
+                              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                            >
+                              {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
+                            </select>
+                            <input
+                              type="number"
+                              min={0}
+                              max={6}
+                              placeholder="Graus"
+                              value={newProfDegrees}
+                              onChange={(e) => setNewProfDegrees(e.target.value)}
+                              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                            />
+                          </div>
+                        )}
                         <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">
-                          Adicionar Professor e Gerar Acesso
+                          {newProfRole === 'admin'
+                            ? 'Adicionar Administrador e Gerar Acesso'
+                            : 'Adicionar Professor e Gerar Acesso'}
                         </button>
                       </form>
                     )}
@@ -3437,7 +3509,7 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1">Senha Administrador</label>
+                <label className="text-slate-400 block mb-1">Senha Administrador (Reserva)</label>
                 <input
                   type="text"
                   value={config.adminPass}
@@ -4094,7 +4166,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO E EXCLUSÃO DE PROFESSOR (MASTER) */}
+      {/* MODAL DE EDIÇÃO E EXCLUSÃO DE PROFESSOR / ADMINISTRADOR (MASTER) */}
       {editingProf && isMaster && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <form
@@ -4102,9 +4174,10 @@ export default function App() {
               e.preventDefault();
               await saveProfessor({
                 ...editingProf,
+                role: editingProf.role || 'prof',
                 login: (editingProf.login || '').trim().toUpperCase(),
                 password: (editingProf.password || '').trim(),
-                degrees: Number(editingProf.degrees) || 0
+                degrees: editingProf.role === 'admin' ? 0 : (Number(editingProf.degrees) || 0)
               });
               setEditingProf(null);
               setConfirmDelete(false);
@@ -4113,7 +4186,7 @@ export default function App() {
           >
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-amber-400 flex items-center gap-2">
-                <Settings className="w-4 h-4" /> Editar Professor
+                <Settings className="w-4 h-4" /> Editar {editingProf.role === 'admin' ? 'Administrador' : 'Professor'}
               </h3>
               <button
                 type="button"
@@ -4126,7 +4199,19 @@ export default function App() {
 
             <div className="space-y-2.5 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1">Nome do Professor</label>
+                <label className="text-slate-400 block mb-1">Cargo / Função</label>
+                <select
+                  value={editingProf.role || 'prof'}
+                  onChange={(e) => setEditingProf({ ...editingProf, role: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                >
+                  <option value="prof">Professor (Painel do Tatame)</option>
+                  <option value="admin">Administrador (Painel Administrativo)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Nome</label>
                 <input
                   type="text"
                   required
@@ -4142,7 +4227,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      const creds = generateProfessorCredentials(editingProf.name);
+                      const creds = generateStaffCredentials(editingProf.name, editingProf.role || 'prof');
                       setEditingProf({ ...editingProf, login: creds.login, password: creds.password });
                     }}
                     className="text-[11px] px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold hover:bg-amber-500/30"
@@ -4173,7 +4258,9 @@ export default function App() {
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Turmas</label>
+                <label className="text-slate-400 block mb-1">
+                  {editingProf.role === 'admin' ? 'Função / Setor' : 'Turmas'}
+                </label>
                 <input
                   type="text"
                   value={editingProf.classes || ''}
@@ -4181,29 +4268,32 @@ export default function App() {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-slate-400 block mb-1">Faixa</label>
-                  <select
-                    value={editingProf.beltId}
-                    onChange={(e) => setEditingProf({ ...editingProf, beltId: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-                  >
-                    {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
-                  </select>
+
+              {editingProf.role !== 'admin' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Faixa</label>
+                    <select
+                      value={editingProf.beltId}
+                      onChange={(e) => setEditingProf({ ...editingProf, beltId: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    >
+                      {ADULT_BELTS.map(b => <option key={b.id} value={b.id}>Faixa {b.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Graus</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={6}
+                      value={editingProf.degrees}
+                      onChange={(e) => setEditingProf({ ...editingProf, degrees: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Graus</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={6}
-                    value={editingProf.degrees}
-                    onChange={(e) => setEditingProf({ ...editingProf, degrees: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="pt-2 space-y-2">
@@ -4220,7 +4310,7 @@ export default function App() {
                   onClick={() => setConfirmDelete(true)}
                   className="w-full py-2.5 rounded-xl bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-bold text-xs flex items-center justify-center gap-1.5"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> Excluir Professor
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir {editingProf.role === 'admin' ? 'Administrador' : 'Professor'}
                 </button>
               ) : (
                 <div className="bg-red-950/70 border border-red-700 rounded-xl p-3 space-y-2 text-center">
