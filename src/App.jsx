@@ -59,7 +59,8 @@ function getEffectiveFinancialState(student, allStudents, toleranceDays = 3) {
   const ref = titular || student;
   const todayDay = new Date().getDate();
   const dueLimit = Number(ref.dueDay || 5) + Number(toleranceDays || 0);
-  const isOverdue = ref.paymentStatus === 'Pendente' && todayDay > dueLimit;
+  // Só libera se o admin confirmar e o status estiver exatamente "Em dia"
+  const isOverdue = ref.paymentStatus !== 'Em dia' && todayDay > dueLimit;
   const isBlocked = ref.status === 'Inativo' || isOverdue;
 
   return {
@@ -1720,10 +1721,14 @@ export default function App() {
             <div className="bg-red-950/70 border border-red-600/60 rounded-2xl p-3.5 flex items-start gap-2.5">
               <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
               <div className="text-xs text-red-200 leading-relaxed">
-                <strong className="text-red-300 block">Acesso temporariamente suspenso</strong>
+                <strong className="text-red-300 block">
+                  {isAwaitingApproval ? 'Aguardando confirmação do pagamento' : 'Acesso temporariamente suspenso'}
+                </strong>
                 {fin.isDependent
-                  ? `A mensalidade do Plano Familiar (Titular: ${fin.titular.name}) está pendente. Assim que o pagamento for aprovado pela Krya BJJ, sua conta será liberada automaticamente.`
-                  : 'Sua mensalidade está pendente após o vencimento. Realize o pagamento via Pix abaixo para liberar o check-in.'}
+                  ? `A mensalidade do Plano Familiar (Titular: ${fin.titular.name}) está ${isAwaitingApproval ? 'aguardando aprovação' : 'pendente'}. O check-in será liberado assim que o administrador da Krya BJJ aprovar o pagamento.`
+                  : isAwaitingApproval
+                  ? 'Recebemos seu aviso de pagamento. O check-in será liberado automaticamente assim que o administrador da Krya BJJ confirmar o pagamento.'
+                  : 'Sua mensalidade está vencida. Realize o pagamento via Pix abaixo e aguarde a aprovação do administrador para liberar o check-in.'}
               </div>
             </div>
           )}
@@ -1811,7 +1816,9 @@ export default function App() {
           >
             <CheckCircle2 className="w-5 h-5" />
             {fin.isBlocked
-              ? 'Check-in Bloqueado (Pendência Financeira)'
+              ? (isAwaitingApproval
+                  ? 'Check-in Bloqueado (Aguardando Aprovação do Pagamento)'
+                  : 'Check-in Bloqueado (Pendência Financeira)')
               : alreadyCheckedIn
               ? 'Presença Enviada (Aguardando Professor)'
               : 'Registrar Presença no Treino de Hoje'}
