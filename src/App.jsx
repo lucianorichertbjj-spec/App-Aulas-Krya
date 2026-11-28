@@ -591,11 +591,12 @@ export default function App() {
   const [studentSelectedScheduleId, setStudentSelectedScheduleId] = useState(() => INITIAL_SCHEDULES[0]?.id || '');
   const [staffActiveScheduleId, setStaffActiveScheduleId] = useState(() => INITIAL_SCHEDULES[0]?.id || '');
 
-  // NOVO HORÁRIO (MASTER)
+  // NOVO HORÁRIO E EDIÇÃO DE HORÁRIO (MASTER)
   const [newSchedTime, setNewSchedTime] = useState('18:30');
   const [newSchedTitle, setNewSchedTitle] = useState('');
   const [newSchedTatame, setNewSchedTatame] = useState('Tatame 1');
   const [newSchedDays, setNewSchedDays] = useState('Seg a Sex');
+  const [editingSchedule, setEditingSchedule] = useState(null);
 
   // SE ABRIR PELO LINK (?token=...), JÁ ENTRA DIRETO NA FICHA DE CADASTRO
   const [role, setRole] = useState(() => {
@@ -748,6 +749,7 @@ export default function App() {
       setEditingStudent(null);
       setEditingProf(null);
       setEditingPreReg(null);
+      setEditingSchedule(null);
       setConfirmDelete(false);
     };
 
@@ -2609,28 +2611,38 @@ export default function App() {
               )}
             </div>
 
-            {/* GRADE DE HORÁRIOS DA ACADEMIA (MASTER PODE ADICIONAR/REMOVER) */}
+            {/* GRADE DE HORÁRIOS DA ACADEMIA (MASTER PODE EDITAR / ADICIONAR / REMOVER) */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h3 className="font-bold text-sm text-slate-200">Grade de Horários Krya BJJ</h3>
               <div className="space-y-2">
                 {schedules.map(sc => (
-                  <div key={sc.id} className="flex items-center justify-between bg-slate-950 border border-slate-800 p-3 rounded-xl">
-                    <div>
-                      <div className="font-bold text-sm text-white">
+                  <div key={sc.id} className="flex items-center justify-between gap-2 bg-slate-950 border border-slate-800 p-3 rounded-xl">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm text-white truncate">
                         <span className="text-amber-400 font-mono mr-2">{sc.time}</span>
                         {sc.title}
                       </div>
                       <div className="text-xs text-slate-400">{sc.tatame} • {sc.days}</div>
                     </div>
                     {isMaster && (
-                      <button
-                        type="button"
-                        title="Excluir horário"
-                        onClick={() => setSchedules(prev => prev.filter(x => x.id !== sc.id))}
-                        className="p-2 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          title="Editar horário"
+                          onClick={() => setEditingSchedule({ ...sc })}
+                          className="p-2 rounded-lg bg-slate-800 hover:bg-amber-500 text-slate-300 hover:text-slate-950 transition"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Excluir horário"
+                          onClick={() => setSchedules(prev => prev.filter(x => x.id !== sc.id))}
+                          className="p-2 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -3486,6 +3498,108 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* MODAL DE EDIÇÃO DE HORÁRIO (MASTER) */}
+      {editingSchedule && isMaster && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!editingSchedule.time.trim() || !editingSchedule.title.trim()) return;
+              setSchedules(prev => prev.map(sc =>
+                sc.id === editingSchedule.id
+                  ? {
+                      ...editingSchedule,
+                      time: editingSchedule.time.trim(),
+                      title: editingSchedule.title.trim(),
+                      days: editingSchedule.days.trim() || 'Seg a Sex'
+                    }
+                  : sc
+              ));
+              setEditingSchedule(null);
+            }}
+            className="bg-slate-900 border border-slate-700 rounded-3xl p-5 max-w-sm w-full space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-amber-400 flex items-center gap-2">
+                <Settings className="w-4 h-4" /> Editar Horário
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingSchedule(null)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Horário</label>
+                  <input
+                    type="time"
+                    required
+                    value={editingSchedule.time}
+                    onChange={(e) => setEditingSchedule({ ...editingSchedule, time: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-400 block mb-1">Turma</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSchedule.title}
+                    onChange={(e) => setEditingSchedule({ ...editingSchedule, title: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Tatame</label>
+                  <select
+                    value={editingSchedule.tatame}
+                    onChange={(e) => setEditingSchedule({ ...editingSchedule, tatame: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  >
+                    <option value="Tatame 1">Tatame 1</option>
+                    <option value="Tatame 2">Tatame 2</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Dias</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSchedule.days}
+                    onChange={(e) => setEditingSchedule({ ...editingSchedule, days: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingSchedule(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-xs font-bold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition"
+              >
+                Salvar Horário
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* MODAL DE EDIÇÃO / ATIVAÇÃO / EXCLUSÃO DE PRÉ-CADASTRO */}
       {editingPreReg && (
