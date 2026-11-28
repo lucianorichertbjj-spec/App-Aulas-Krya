@@ -51,6 +51,40 @@ function getEffectiveFinancialState(student, allStudents, toleranceDays = 3) {
 }
 
 // =========================================================================
+// REMOVE DUPLICIDADES DE PRÉ-CADASTROS (POR TOKEN OU MESMO ALUNO)
+// =========================================================================
+function dedupePreRegs(list) {
+  const byToken = new Map();
+  for (const item of list || []) {
+    if (!item || !item.token) continue;
+    const prev = byToken.get(item.token);
+    if (!prev || (item.used && !prev.used)) {
+      byToken.set(item.token, item);
+    }
+  }
+
+  const uniqueByToken = Array.from(byToken.values());
+  const seenPeople = new Map();
+  for (const item of uniqueByToken) {
+    const cleanName = (item.name || '').trim().toLowerCase();
+    const cleanPhone = (item.phone || '').replace(/\D/g, '');
+    const key = (item.generatedCode || `${cleanName}|${cleanPhone}`).trim();
+
+    if (!key || key === '|') {
+      seenPeople.set(item.token, item);
+      continue;
+    }
+
+    const prev = seenPeople.get(key);
+    if (!prev || (item.used && !prev.used)) {
+      seenPeople.set(key, item);
+    }
+  }
+
+  return Array.from(seenPeople.values());
+}
+
+// =========================================================================
 // GERADOR OFICIAL DE PIX COPIA E COLA (PADRÃO EMV / BANCO CENTRAL + CRC16)
 // =========================================================================
 function crc16CCITT(str) {
@@ -479,7 +513,7 @@ export default function App() {
   });
   const [preRegs, setPreRegs] = useState(() => {
     const saved = localStorage.getItem('krya_preregs_v1');
-    return saved ? JSON.parse(saved) : INITIAL_PRE_REGS;
+    return dedupePreRegs(saved ? JSON.parse(saved) : INITIAL_PRE_REGS);
   });
   const [config, setConfig] = useState(() => {
     const saved = localStorage.getItem('krya_config_v1');
@@ -701,7 +735,7 @@ export default function App() {
           setCloudStatusMsg('Conectado ao Supabase Nuvem');
           if (stRes.data?.length) setStudents(stRes.data.map(extractRecord));
           if (prRes.data?.length) setProfessors(prRes.data.map(extractRecord));
-          if (preRes.data?.length) setPreRegs(preRes.data.map(extractRecord));
+          if (preRes.data?.length) setPreRegs(dedupePreRegs(preRes.data.map(extractRecord)));
         } else {
           console.error('Erro Supabase SELECT:', firstError);
           setCloudStatusMsg(`Offline (${firstError.message || 'Erro de permissão/tabela'})`);
@@ -756,7 +790,8 @@ export default function App() {
         if (rec?.token) {
           setPreRegs(prev => {
             const exists = prev.some(x => x.token === rec.token);
-            return exists ? prev.map(x => x.token === rec.token ? rec : x) : [rec, ...prev];
+            const updated = exists ? prev.map(x => x.token === rec.token ? rec : x) : [rec, ...prev];
+            return dedupePreRegs(updated);
           });
         }
       })
@@ -793,7 +828,8 @@ export default function App() {
               setCompEmail(rec.email || '');
               setPreRegs(prev => {
                 const exists = prev.some(p => p.token === rec.token);
-                return exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
+                const updated = exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
+                return dedupePreRegs(updated);
               });
             }
             setLoadingCloud(false);
@@ -845,7 +881,8 @@ export default function App() {
   const savePreReg = async (pr) => {
     setPreRegs(prev => {
       const exists = prev.some(x => x.token === pr.token);
-      return exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
+      const updated = exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
+      return dedupePreRegs(updated);
     });
     if (supabase) {
       const { error } = await supabase.from('Krya_preregs').upsert({
@@ -1074,6 +1111,8 @@ export default function App() {
     () => students.find(s => s.id === loggedStudentId) || students[0],
     [students, loggedStudentId]
   );
+
+  const visiblePreRegs = useMemo(() => dedupePreRegs(preRegs), [preRegs]);
 
   // =========================================================================
   // TELA DE FICHA CADASTRAL DO ALUNO (LINK DE PRÉ-CADASTRO)
@@ -2219,7 +2258,7 @@ export default function App() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
             { id: 'alunos', label: `Turmas & Equipe (${students.length + professors.length})`, icon: Users },
-            { id: 'precadastro', label: `Pré-Cadastros (${preRegs.filter(p => !p.used).length})`, icon: LinkIconFallback },
+            { id: 'precadastro', label: `Pré-Cadastros (${visiblePreRegs.filter(p => !p.used).length})`, icon: LinkIconFallback },
             {
               id: 'financeiro',
               label: financeBadgeCount > 0 ? `Financeiro (${financeBadgeCount} p/ aprovar)` : 'Financeiro & Baixas',
@@ -2548,7 +2587,7 @@ export default function App() {
                 + Novo Pré-Cadastro
               </button>
             </div>
-            {preRegs.map(pr => {
+            {visiblePreRegs.map(pr => {
               const link = `${window.location.origin}/?token=${pr.token}`;
               const waText = encodeURIComponent(`Olá ${pr.name}! Complete sua ficha de matrícula na Krya BJJ pelo link exclusivo: ${link}`);
               const matchedStudent = students.find(
