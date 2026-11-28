@@ -22,6 +22,22 @@ function isPreRegUsed(val) {
 }
 
 // =========================================================================
+// GERADOR DE LOGIN E SENHA ALEATÓRIOS PARA PROFESSORES
+// =========================================================================
+function generateProfessorCredentials(name) {
+  const cleanFirst = (name || 'PROF')
+    .replace(/^prof\.?\s*/i, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(' ')[0]
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '') || 'PROF';
+
+  const login = `${cleanFirst}${String(Math.floor(10 + Math.random() * 89))}`;
+  const password = String(Math.floor(100000 + Math.random() * 900000));
+  return { login, password };
+}
+
+// =========================================================================
 // PLANOS FAMILIARES KRYA BJJ
 // =========================================================================
 const FAMILY_PLANS = [
@@ -241,7 +257,7 @@ function compressImage(file) {
 
 function buildCredentialsWhatsAppLink(phone, name, code, password) {
   const appUrl = window.location.origin;
-  const msg = `Olá ${name}! Seu cadastro na Krya BJJ está ativo.\n\nAcesse o aplicativo: ${appUrl}\nLogin / Código: ${code}\nSenha: ${password}`;
+  const msg = `Olá ${name}! Seu acesso ao aplicativo Krya BJJ está ativo.\n\nAcesse: ${appUrl}\nLogin: ${code}\nSenha: ${password}`;
   const digits = (phone || '').replace(/\D/g, '');
   const prefix = digits ? `https://wa.me/55${digits}?text=` : 'https://wa.me/?text=';
   return `${prefix}${encodeURIComponent(msg)}`;
@@ -478,8 +494,8 @@ const INITIAL_STUDENTS = [
 ];
 
 const INITIAL_PROFESSORS = [
-  { id: 'prof-luciano', name: 'Prof. Luciano Richert', beltId: 'preta', degrees: 1, classes: 'Adultos, Kids & Baby Kids', photo: '' },
-  { id: 'prof-cris', name: 'Prof. Cris', beltId: 'marrom', degrees: 2, classes: 'Adultos & Kids Juvenil', photo: '' }
+  { id: 'prof-luciano', name: 'Prof. Luciano Richert', login: 'LUCIANO01', password: '123456', beltId: 'preta', degrees: 1, classes: 'Adultos, Kids & Baby Kids', photo: '' },
+  { id: 'prof-cris', name: 'Prof. Cris', login: 'CRIS02', password: '123456', beltId: 'marrom', degrees: 2, classes: 'Adultos & Kids Juvenil', photo: '' }
 ];
 
 const INITIAL_PRE_REGS = [
@@ -561,6 +577,9 @@ export default function App() {
   const [loggedStudentId, setLoggedStudentId] = useState(() => {
     return localStorage.getItem('krya_student_id_v1') || null;
   });
+  const [loggedProfId, setLoggedProfId] = useState(() => {
+    return localStorage.getItem('krya_prof_id_v1') || null;
+  });
 
   const [loginInput, setLoginInput] = useState('');
   const [passInput, setPassInput] = useState('');
@@ -624,6 +643,7 @@ export default function App() {
   const [newProfBelt, setNewProfBelt] = useState('preta');
   const [newProfDegrees, setNewProfDegrees] = useState(0);
   const [newProfClasses] = useState('Adultos & Kids');
+  const [lastCreatedProf, setLastCreatedProf] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('krya_students_v1', JSON.stringify(students));
@@ -653,6 +673,14 @@ export default function App() {
       localStorage.removeItem('krya_student_id_v1');
     }
   }, [loggedStudentId]);
+
+  useEffect(() => {
+    if (loggedProfId) {
+      localStorage.setItem('krya_prof_id_v1', loggedProfId);
+    } else {
+      localStorage.removeItem('krya_prof_id_v1');
+    }
+  }, [loggedProfId]);
 
   useEffect(() => {
     if (role === 'complete_prereg' && activePreRegToken) {
@@ -722,11 +750,13 @@ export default function App() {
   const handleLogout = () => {
     setRole(null);
     setLoggedStudentId(null);
+    setLoggedProfId(null);
     setSelectedFolder(null);
     setActivePreRegToken(null);
     setUrlPreRegFallback(null);
     localStorage.removeItem('krya_role_v1');
     localStorage.removeItem('krya_student_id_v1');
+    localStorage.removeItem('krya_prof_id_v1');
     if (window.location.search.includes('token=')) {
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -971,8 +1001,20 @@ export default function App() {
     if (pass === config.adminPass || (user.toLowerCase() === 'admin' && pass === config.adminPass)) {
       setRole('admin'); setActiveTab('alunos'); setSelectedFolder(null); return;
     }
+
+    const foundProf = professors.find(
+      p => p.login && p.login.toLowerCase() === user.toLowerCase() && p.password === pass
+    );
+    if (foundProf) {
+      setLoggedProfId(foundProf.id);
+      setRole('prof');
+      return;
+    }
+
     if (pass === config.profPass || (user.toLowerCase() === 'prof' && pass === config.profPass)) {
-      setRole('prof'); return;
+      setLoggedProfId(null);
+      setRole('prof');
+      return;
     }
 
     const found = students.find(
@@ -1124,6 +1166,11 @@ export default function App() {
   const currentStudent = useMemo(
     () => students.find(s => s.id === loggedStudentId) || students[0],
     [students, loggedStudentId]
+  );
+
+  const currentProfessor = useMemo(
+    () => professors.find(p => p.id === loggedProfId) || null,
+    [professors, loggedProfId]
   );
 
   // SOMENTE PRÉ-CADASTROS PENDENTES (SAI AUTOMATICAMENTE QUANDO COMPLETA O CADASTRO)
@@ -1456,10 +1503,10 @@ export default function App() {
 
           <form onSubmit={handleLogin} className="space-y-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Código do Aluno, E-mail ou Perfil</label>
+              <label className="block text-xs text-slate-400 mb-1">Código do Aluno, Professor, E-mail ou Perfil</label>
               <input
                 type="text"
-                placeholder="Ex.: HEITOR12 ou master"
+                placeholder="Ex.: HEITOR12, LUCIANO01 ou master"
                 value={loginInput}
                 onChange={(e) => setLoginInput(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:border-amber-500 outline-none"
@@ -2052,7 +2099,9 @@ export default function App() {
         <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-emerald-400" />
-            <span className="font-bold text-sm">Tatame • Professor</span>
+            <span className="font-bold text-sm">
+              {currentProfessor ? `Tatame • ${currentProfessor.name}` : 'Tatame • Professor'}
+            </span>
           </div>
           <button
             onClick={handleLogout}
@@ -2368,6 +2417,26 @@ export default function App() {
 
                 {selectedFolder === 'professores' ? (
                   <div className="space-y-4">
+                    {lastCreatedProf && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/40 rounded-2xl p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400">
+                            Professor cadastrado com acesso gerado!
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setLastCreatedProf(null)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="text-xs text-slate-200 font-mono">
+                          {lastCreatedProf.name} • Login: <strong className="text-amber-400">{lastCreatedProf.login}</strong> • Senha: <strong className="text-emerald-400">{lastCreatedProf.password}</strong>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid sm:grid-cols-2 gap-3">
                       {professors
                         .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
@@ -2380,55 +2449,87 @@ export default function App() {
                                 setConfirmDelete(false);
                               }
                             }}
-                            className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3 ${
+                            className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2.5 ${
                               isMaster ? 'cursor-pointer hover:border-amber-500/40 transition' : ''
                             }`}
                           >
-                            <div className="relative" onClick={(e) => e.stopPropagation()}>
-                              {prof.photo ? (
-                                <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
-                              ) : (
-                                <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
-                                  {prof.name.replace('Prof. ', '')[0]}
-                                </div>
-                              )}
-                              {isMaster && (
-                                <label className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1.5 rounded-full cursor-pointer">
-                                  <Camera className="w-3 h-3" />
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={async (e) => {
-                                      if (e.target.files?.[0]) {
-                                        const compressed = await compressImage(e.target.files[0]);
-                                        saveProfessor({ ...prof, photo: compressed });
-                                      }
-                                    }}
-                                  />
-                                </label>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm truncate">{prof.name}</div>
-                              <div className="text-xs text-slate-400 truncate">{prof.classes}</div>
-                              <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
-                                Faixa {prof.beltId} • {prof.degrees}º Grau
+                            <div className="flex items-center gap-3">
+                              <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                {prof.photo ? (
+                                  <img src={prof.photo} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
+                                ) : (
+                                  <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-amber-400">
+                                    {prof.name.replace('Prof. ', '')[0]}
+                                  </div>
+                                )}
+                                {isMaster && (
+                                  <label className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 p-1.5 rounded-full cursor-pointer">
+                                    <Camera className="w-3 h-3" />
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        if (e.target.files?.[0]) {
+                                          const compressed = await compressImage(e.target.files[0]);
+                                          saveProfessor({ ...prof, photo: compressed });
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                )}
                               </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm truncate">{prof.name}</div>
+                                <div className="text-xs text-slate-400 truncate">{prof.classes}</div>
+                                <div className="text-[11px] text-amber-400 mt-0.5 uppercase">
+                                  Faixa {prof.beltId} • {prof.degrees}º Grau
+                                </div>
+                                {isMaster && prof.login && (
+                                  <div className="text-[11px] font-mono text-slate-300 mt-1">
+                                    Login: <span className="text-amber-300">{prof.login}</span> • Senha: <span className="text-emerald-400">{prof.password}</span>
+                                  </div>
+                                )}
+                              </div>
+                              {isMaster && (
+                                <button
+                                  type="button"
+                                  title="Editar ou excluir professor"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingProf({ ...prof });
+                                    setConfirmDelete(false);
+                                  }}
+                                  className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition shrink-0"
+                                >
+                                  <Settings className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
-                            {isMaster && (
-                              <button
-                                type="button"
-                                title="Editar ou excluir professor"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingProf({ ...prof });
-                                  setConfirmDelete(false);
-                                }}
-                                className="p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition shrink-0"
+
+                            {isMaster && prof.login && (
+                              <div
+                                className="flex gap-2 pt-2 border-t border-slate-800"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                <Settings className="w-4 h-4" />
-                              </button>
+                                <a
+                                  href={buildCredentialsWhatsAppLink('', prof.name, prof.login, prof.password)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center"
+                                >
+                                  Enviar WhatsApp
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => navigator.clipboard?.writeText(
+                                    `Krya BJJ (Professor) - Login: ${prof.login} | Senha: ${prof.password}`
+                                  )}
+                                  className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1"
+                                >
+                                  <Copy className="w-3.5 h-3.5" /> Copiar Acesso
+                                </button>
+                              </div>
                             )}
                           </div>
                         ))}
@@ -2439,19 +2540,24 @@ export default function App() {
                         onSubmit={(e) => {
                           e.preventDefault();
                           if (!newProfName.trim()) return;
-                          saveProfessor({
+                          const { login, password } = generateProfessorCredentials(newProfName.trim());
+                          const created = {
                             id: 'prof-' + Date.now(),
                             name: newProfName.trim(),
+                            login,
+                            password,
                             beltId: newProfBelt,
                             degrees: Number(newProfDegrees),
                             classes: newProfClasses,
                             photo: ''
-                          });
+                          };
+                          saveProfessor(created);
+                          setLastCreatedProf(created);
                           setNewProfName('');
                         }}
                         className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3"
                       >
-                        <h3 className="font-bold text-sm">Cadastrar Novo Professor</h3>
+                        <h3 className="font-bold text-sm">Cadastrar Novo Professor (Gera Login e Senha)</h3>
                         <input
                           type="text"
                           placeholder="Nome (Ex.: Prof. Matheus)"
@@ -2478,7 +2584,7 @@ export default function App() {
                           />
                         </div>
                         <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">
-                          Adicionar Professor
+                          Adicionar Professor e Gerar Acesso
                         </button>
                       </form>
                     )}
@@ -2978,7 +3084,7 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1">Senha Professor</label>
+                <label className="text-slate-400 block mb-1">Senha Professor (Reserva)</label>
                 <input
                   type="text"
                   value={config.profPass}
@@ -3532,6 +3638,8 @@ export default function App() {
               e.preventDefault();
               await saveProfessor({
                 ...editingProf,
+                login: (editingProf.login || '').trim().toUpperCase(),
+                password: (editingProf.password || '').trim(),
                 degrees: Number(editingProf.degrees) || 0
               });
               setEditingProf(null);
@@ -3563,6 +3671,43 @@ export default function App() {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm"
                 />
               </div>
+
+              <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-400">Acesso ao Painel</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const creds = generateProfessorCredentials(editingProf.name);
+                      setEditingProf({ ...editingProf, login: creds.login, password: creds.password });
+                    }}
+                    className="text-[11px] px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold hover:bg-amber-500/30"
+                  >
+                    Gerar Aleatório
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Login</label>
+                    <input
+                      type="text"
+                      value={editingProf.login || ''}
+                      onChange={(e) => setEditingProf({ ...editingProf, login: e.target.value.toUpperCase() })}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Senha</label>
+                    <input
+                      type="text"
+                      value={editingProf.password || ''}
+                      onChange={(e) => setEditingProf({ ...editingProf, password: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="text-slate-400 block mb-1">Turmas</label>
                 <input
