@@ -15,6 +15,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_ZD9Lf2vJhoTUKXs1jl971A_viY2Ql9A';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================================
+// VALIDAÇÃO SEGURA DO STATUS "USED" (EVITA BUG DE TEXTO "false" SER VERDADEIRO)
+// =========================================================================
+function isPreRegUsed(val) {
+  return val === true || val === 'true' || val === 1 || val === '1';
+}
+
+// =========================================================================
 // PLANOS FAMILIARES KRYA BJJ
 // =========================================================================
 const FAMILY_PLANS = [
@@ -51,37 +58,19 @@ function getEffectiveFinancialState(student, allStudents, toleranceDays = 3) {
 }
 
 // =========================================================================
-// REMOVE DUPLICIDADES DE PRÉ-CADASTROS (POR TOKEN OU MESMO ALUNO)
+// REMOVE DUPLICIDADES DE PRÉ-CADASTROS POR TOKEN
 // =========================================================================
 function dedupePreRegs(list) {
   const byToken = new Map();
   for (const item of list || []) {
     if (!item || !item.token) continue;
-    const prev = byToken.get(item.token);
-    if (!prev || (item.used && !prev.used)) {
-      byToken.set(item.token, item);
+    const normalized = { ...item, used: isPreRegUsed(item.used) };
+    const prev = byToken.get(normalized.token);
+    if (!prev || (normalized.used && !prev.used)) {
+      byToken.set(normalized.token, normalized);
     }
   }
-
-  const uniqueByToken = Array.from(byToken.values());
-  const seenPeople = new Map();
-  for (const item of uniqueByToken) {
-    const cleanName = (item.name || '').trim().toLowerCase();
-    const cleanPhone = (item.phone || '').replace(/\D/g, '');
-    const key = (item.generatedCode || `${cleanName}|${cleanPhone}`).trim();
-
-    if (!key || key === '|') {
-      seenPeople.set(item.token, item);
-      continue;
-    }
-
-    const prev = seenPeople.get(key);
-    if (!prev || (item.used && !prev.used)) {
-      seenPeople.set(key, item);
-    }
-  }
-
-  return Array.from(seenPeople.values());
+  return Array.from(byToken.values());
 }
 
 // =========================================================================
@@ -597,7 +586,7 @@ export default function App() {
   const [copiedCreds, setCopiedCreds] = useState(false);
   const [submittingPreReg, setSubmittingPreReg] = useState(false);
 
-  // CAMPOS DA FICHA CADASTRAL DO ALUNO (JÁ PRÉ-PREENCHIDOS SE VIEREM NO LINK)
+  // CAMPOS DA FICHA CADASTRAL DO ALUNO
   const [compName, setCompName] = useState(() => initialUrlPreReg?.name || '');
   const [compPhone, setCompPhone] = useState(() => initialUrlPreReg?.phone || '');
   const [compEmail, setCompEmail] = useState(() => initialUrlPreReg?.email || '');
@@ -819,9 +808,10 @@ export default function App() {
         }
         const rec = extractRecord(payload.new);
         if (rec?.token) {
+          const normalized = { ...rec, used: isPreRegUsed(rec.used) };
           setPreRegs(prev => {
-            const exists = prev.some(x => x.token === rec.token);
-            const updated = exists ? prev.map(x => x.token === rec.token ? rec : x) : [rec, ...prev];
+            const exists = prev.some(x => x.token === normalized.token);
+            const updated = exists ? prev.map(x => x.token === normalized.token ? normalized : x) : [normalized, ...prev];
             return dedupePreRegs(updated);
           });
         }
@@ -847,12 +837,13 @@ export default function App() {
       .then(({ data, error }) => {
         if (!error && data) {
           const rec = extractRecord(data);
-          setCompName(prev => prev || rec.name || '');
-          setCompPhone(prev => prev || rec.phone || '');
-          setCompEmail(prev => prev || rec.email || '');
+          const normalized = { ...rec, used: isPreRegUsed(rec.used) };
+          setCompName(prev => prev || normalized.name || '');
+          setCompPhone(prev => prev || normalized.phone || '');
+          setCompEmail(prev => prev || normalized.email || '');
           setPreRegs(prev => {
-            const exists = prev.some(p => p.token === rec.token);
-            const updated = exists ? prev.map(p => p.token === rec.token ? rec : p) : [rec, ...prev];
+            const exists = prev.some(p => p.token === normalized.token);
+            const updated = exists ? prev.map(p => p.token === normalized.token ? normalized : p) : [normalized, ...prev];
             return dedupePreRegs(updated);
           });
         }
@@ -900,21 +891,22 @@ export default function App() {
   };
 
   const savePreReg = async (pr) => {
+    const normalized = { ...pr, used: isPreRegUsed(pr.used) };
     setPreRegs(prev => {
-      const exists = prev.some(x => x.token === pr.token);
-      const updated = exists ? prev.map(x => x.token === pr.token ? pr : x) : [pr, ...prev];
+      const exists = prev.some(x => x.token === normalized.token);
+      const updated = exists ? prev.map(x => x.token === normalized.token ? normalized : x) : [normalized, ...prev];
       return dedupePreRegs(updated);
     });
     if (supabase) {
       const { error } = await supabase.from('Krya_preregs').upsert({
-        token: pr.token,
-        name: pr.name,
-        phone: pr.phone,
-        email: pr.email,
-        used: pr.used
+        token: normalized.token,
+        name: normalized.name,
+        phone: normalized.phone,
+        email: normalized.email,
+        used: normalized.used
       });
       if (error) {
-        await supabase.from('Krya_preregs').upsert({ token: pr.token, data: pr });
+        await supabase.from('Krya_preregs').upsert({ token: normalized.token, data: normalized });
       }
     }
   };
@@ -1063,7 +1055,7 @@ export default function App() {
       urlPreRegFallback ||
       (activePreRegToken ? { token: activePreRegToken, name: compName, phone: compPhone, email: compEmail, used: false } : null);
 
-    if (!pr || pr.used || submittingPreReg) return;
+    if (!pr || isPreRegUsed(pr.used) || submittingPreReg) return;
 
     setSubmittingPreReg(true);
     try {
@@ -1136,7 +1128,7 @@ export default function App() {
 
   // SOMENTE PRÉ-CADASTROS PENDENTES (SAI AUTOMATICAMENTE QUANDO COMPLETA O CADASTRO)
   const pendingPreRegs = useMemo(
-    () => dedupePreRegs(preRegs).filter(p => !p.used),
+    () => dedupePreRegs(preRegs).filter(p => !isPreRegUsed(p.used)),
     [preRegs]
   );
 
@@ -1236,7 +1228,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-          ) : pr.used ? (
+          ) : isPreRegUsed(pr.used) ? (
             <div className="text-center py-8 space-y-3">
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
               <h2 className="font-bold text-lg">Este link já foi utilizado</h2>
@@ -3074,7 +3066,7 @@ export default function App() {
 
             <div className="space-y-2.5 text-xs">
               <div className="text-[11px] text-slate-400 font-mono">
-                Token: {editingPreReg.token} • Status: {editingPreReg.used ? 'Concluído' : 'Aguardando'}
+                Token: {editingPreReg.token} • Status: {isPreRegUsed(editingPreReg.used) ? 'Concluído' : 'Aguardando'}
               </div>
               <div>
                 <label className="text-slate-400 block mb-1">Nome do Aluno</label>
