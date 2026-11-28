@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-  Shield, Users, DollarSign, CheckCircle2, Clock, Search,
+  Users, DollarSign, CheckCircle2, Clock, Search,
   LogOut, UserPlus, Camera, KeyRound, Copy, Check,
   QrCode, ChevronRight, AlertCircle, Folder, ArrowLeft, Settings, Trash2, X, Mail
 } from 'lucide-react';
@@ -1196,9 +1196,13 @@ export default function App() {
       <div className="min-h-screen bg-slate-950 text-slate-100 p-4 flex items-center justify-center">
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Shield className="w-6 h-6 text-amber-400" />
-              <span className="font-bold tracking-wide text-lg">KRYA BJJ — Ficha Cadastral</span>
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/logo-krya.jpg"
+                alt="Krya BJJ"
+                className="w-10 h-10 rounded-xl object-contain bg-black border border-amber-500/30 p-0.5 shrink-0"
+              />
+              <span className="font-bold tracking-wide text-base">KRYA BJJ — Ficha Cadastral</span>
             </div>
             <button
               onClick={() => { setCompletedCredentials(null); handleLogout(); }}
@@ -1488,10 +1492,11 @@ export default function App() {
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
-            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto">
-              <Shield className="w-9 h-9 text-amber-400" />
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white">KRYA BJJ</h1>
+            <img
+              src="/logo-krya.jpg"
+              alt="Krya BJJ"
+              className="w-40 h-auto mx-auto rounded-2xl border border-amber-500/30 shadow-lg object-contain bg-black p-1"
+            />
             <p className="text-xs text-slate-400">Sistema Oficial de Gestão, Graduação & Portal do Aluno</p>
             <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full ${
               cloudConnected ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-300'
@@ -1685,8 +1690,12 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
         <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-amber-400" />
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/logo-krya.jpg"
+              alt="Krya BJJ"
+              className="w-9 h-9 rounded-xl object-contain bg-black border border-amber-500/30 p-0.5 shrink-0"
+            />
             <span className="font-bold text-sm">KRYA BJJ</span>
             <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded font-mono text-amber-300">{st.code}</span>
           </div>
@@ -2097,8 +2106,12 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
         <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-emerald-400" />
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/logo-krya.jpg"
+              alt="Krya BJJ"
+              className="w-9 h-9 rounded-xl object-contain bg-black border border-emerald-500/30 p-0.5 shrink-0"
+            />
             <span className="font-bold text-sm">
               {currentProfessor ? `Tatame • ${currentProfessor.name}` : 'Tatame • Professor'}
             </span>
@@ -2296,8 +2309,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <Shield className="w-6 h-6 text-amber-400" />
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/logo-krya.jpg"
+            alt="Krya BJJ"
+            className="w-10 h-10 rounded-xl object-contain bg-black border border-amber-500/30 p-0.5 shrink-0"
+          />
           <div>
             <div className="font-black text-sm leading-tight">KRYA BJJ</div>
             <div className="text-[10px] text-amber-400 uppercase font-bold">
